@@ -65,7 +65,7 @@ Both `gh` and `tea` are only required if you plan to use their respective platfo
 If you have `make` installed, you can simply run:
 
 ```bash
-git clone https://github.com/Mik-TF/gits.git
+git clone https://github.com/ucli-tools/gits.git
 cd gits
 bash gits.sh install
 ```
