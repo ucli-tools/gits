@@ -91,8 +91,8 @@ clone-all() {
     local failed_clones=0
     local total_repos=0
 
-    # Loop through each repository in JSON format
-    echo "$repos_json" | jq -c '.[]' | while read -r repo; do
+    # Use process substitution to avoid subshell variable scope issues
+    while read -r repo; do
         local repo_name=$(echo "$repo" | jq -r '.name')
         local repo_url=$(echo "$repo" | jq -r '.sshUrl')
 
@@ -114,7 +114,7 @@ clone-all() {
             ((failed_clones++))
             echo -e "${RED}Failed to clone $repo_name${NC}"
         fi
-    done
+    done < <(echo "$repos_json" | jq -c '.[]')
 
     # Display summary
     echo -e "\n${BLUE}Cloning Summary:${NC}"
