@@ -996,6 +996,131 @@ init() {
     echo -e "Branch: ${BLUE}$initial_branch${NC}"
 }
 
+# Function to initialize multiple repositories at once
+init-list() {
+    echo -e "${GREEN}Which platform would you like to use?${NC}"
+    echo -e "1) Gitea (git.ourworld.tf)"
+    echo -e "2) GitHub (github.com)"
+    read -p "Enter your choice (1/2): " platform_choice
+
+    # Set platform-specific variables
+    case "$platform_choice" in
+        1)
+            git_url="https://git.ourworld.tf"
+            initial_branch="development"
+            platform="Gitea"
+            ;;
+        2)
+            git_url="https://github.com"
+            initial_branch="main"
+            platform="GitHub"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
+            return 1
+            ;;
+    esac
+
+    echo -e "Enter your $platform username:"
+    read username
+
+    if [ -z "$username" ]; then
+        echo -e "${RED}Error: Username cannot be empty.${NC}"
+        return 1
+    fi
+
+    echo -e "${GREEN}Enter the list of repository names (one per line, end with an empty line):${NC}"
+    echo -e "${BLUE}You can now type or paste the list. Press Enter twice to finish.${NC}"
+    
+    # Create a parent directory for all repositories
+    parent_dir="$username-repos"
+    mkdir -p "$parent_dir"
+    cd "$parent_dir" || return 1
+    
+    # Read the list of repository names
+    local successful_inits=0
+    local failed_inits=0
+    local total_repos=0
+    
+    while IFS= read -r repo_name; do
+        # Break the loop if an empty line is entered
+        if [ -z "$repo_name" ]; then
+            break
+        fi
+        
+        # Clean the repo name
+        repo_name=$(echo "$repo_name" | sed 's/^[[:space:]]*-[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+        
+        ((total_repos++))
+        
+        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}Processing: $repo_name${NC}"
+        
+        # Skip if repository directory already exists
+        if [ -d "$repo_name" ]; then
+            echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
+            continue
+        fi
+        
+        # Create directory for the repository
+        mkdir -p "$repo_name"
+        cd "$repo_name" || continue
+        
+        echo -e "${GREEN}Initializing new Git repository for $repo_name...${NC}"
+        
+        # Make sure to create a repository on the platform first
+        echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
+        echo -e "Press Enter when you're ready to continue..."
+        read
+        
+        # Initialize git repository
+        if git init; then
+            echo -e "${GREEN}Setting initial branch as '${initial_branch}'...${NC}"
+            git checkout -b $initial_branch
+            
+            # Create a README.md file if it doesn't exist
+            if [ ! -f "README.md" ]; then
+                echo "# $repo_name" > README.md
+                echo "Repository created with GitS init-list" >> README.md
+            fi
+            
+            git add .
+            
+            # Commit with a standard message
+            commit_message="Initial commit from GitS init-list"
+            git commit -m "$commit_message"
+            
+            # Set remote origin
+            git remote add origin "$git_url/$username/$repo_name.git"
+            
+            # Push to remote
+            if git push -u origin $initial_branch; then
+                ((successful_inits++))
+                echo -e "${GREEN}Repository $repo_name initialized and pushed to $platform successfully.${NC}"
+                echo -e "Branch: ${BLUE}$initial_branch${NC}"
+            else
+                ((failed_inits++))
+                echo -e "${RED}Failed to push repository $repo_name to $platform.${NC}"
+            fi
+        else
+            ((failed_inits++))
+            echo -e "${RED}Failed to initialize repository $repo_name.${NC}"
+        fi
+        
+        # Return to parent directory
+        cd ..
+    done
+    
+    # Display summary
+    echo -e "\n${BLUE}Initialization Summary:${NC}"
+    echo -e "Total Repositories: ${total_repos}"
+    echo -e "${GREEN}Successfully Initialized: ${successful_inits}${NC}"
+    echo -e "${RED}Failed to Initialize: ${failed_inits}${NC}"
+    
+    # Return to original directory
+    cd - > /dev/null
+}
+
 # Function to create a new branch
 new() {
     if [ -z "$1" ]; then
@@ -1473,6 +1598,12 @@ help() {
     
     echo -e "${PURPLE}Note:${NC} Ensure you're in your git repository directory when running git-related commands."
     echo -e "${PURPLE}Tip:${NC}  Use 'git help' to see all available Git commands that can be used with GitS.\n"
+    
+    echo -e "  ${GREEN}init-list${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Initialize multiple repositories at once"
+    echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username-repos and initializes all repos into it"
+    echo -e "                  ${BLUE}Note:${NC}    Default branch: 'development' (Gitea), 'main' (GitHub)"
+    echo -e "                  ${BLUE}Example:${NC} gits init-list\n"
 }
 
 # Main execution logic
@@ -1514,6 +1645,9 @@ main() {
             ;;
         init)
             init
+            ;;
+        init-list)
+            init-list
             ;;
         new)
             shift
