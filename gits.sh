@@ -64,6 +64,112 @@ clone() {
     fi
 }
 
+# Function to check status of all repositories
+status-all() {
+    local show_clean=false
+    local compact=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --all|-a)
+                show_clean=true
+                shift
+                ;;
+            --compact|-c)
+                compact=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits status-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Check git status across all repositories in current directory tree${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  -a, --all      Show all repositories (including clean ones)"
+                echo -e "  -c, --compact  Show compact summary format"
+                echo -e "  -h, --help     Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits status-all           # Show only repos needing attention"
+                echo -e "  gits status-all --all     # Show all repos with status"
+                echo -e "  gits status-all --compact # Show compact summary"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits status-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Checking git repositories...${NC}"
+    echo -e ""
+    
+    local found_repos=0
+    local dirty_repos=0
+    
+    # Find all .git directories and process them
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        cd "$repodir" || continue
+        
+        found_repos=$((found_repos + 1))
+        
+        # Get repository status
+        local status_output=$(git status --porcelain 2>/dev/null)
+        local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        local has_changes=false
+        
+        if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
+            has_changes=true
+            dirty_repos=$((dirty_repos + 1))
+        fi
+        
+        # Show repository info based on options
+        if [[ "$has_changes" == true ]] || [[ "$show_clean" == true ]]; then
+            if [[ "$compact" == true ]]; then
+                # Compact format
+                local status_icon="✅"
+                local status_text="[clean]"
+                
+                if [[ "$has_changes" == true ]]; then
+                    status_icon="🔴"
+                    status_text=""
+                    [[ -n "$status_output" ]] && status_text="${status_text}[modified]"
+                    [[ "$unpushed" -gt 0 ]] && status_text="${status_text}[+$unpushed ahead]"
+                fi
+                
+                printf "${status_icon} %-50s %s\n" "$repodir" "$status_text"
+            else
+                # Detailed format
+                if [[ "$has_changes" == true ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC}"
+                    git status --short
+                    if [[ "$unpushed" -gt 0 ]]; then
+                        echo -e "   ${ORANGE}↑ $unpushed commits to push${NC}"
+                    fi
+                    echo -e ""
+                else
+                    echo -e "${GREEN}✅ $repodir [clean]${NC}"
+                fi
+            fi
+        fi
+        
+        cd - >/dev/null 2>&1
+    done < <(find . -name .git -type d -print0)
+    
+    # Summary
+    echo -e ""
+    echo -e "${PURPLE}Summary:${NC}"
+    echo -e "  Total repositories: $found_repos"
+    if [[ "$dirty_repos" -gt 0 ]]; then
+        echo -e "  ${ORANGE}Repositories needing attention: $dirty_repos${NC}"
+    else
+        echo -e "  ${GREEN}All repositories are clean!${NC}"
+    fi
+}
+
 clone-all() {
     echo -e "${GREEN}Which platform would you like to use?${NC}"
     echo -e "1) Gitea"
@@ -1564,10 +1670,17 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits clone-all\n"
     
     echo -e "  ${GREEN}clone-list${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} Clone multiple repositories from a pasted list"
-    echo -e "                  ${BLUE}Note:${NC}    Creates directory structure code/<domain>/<org>/<repo>"
+    echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user on selected platform"
+    echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
     echo -e "                  ${BLUE}Note:${NC}    Supports various URL formats including github.com and git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits clone-list\n"
+    
+    echo -e "  ${GREEN}status-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Check git status across all repositories in directory tree"
+    echo -e "                  ${BLUE}Options:${NC} --all (show clean repos), --compact (summary format)"
+    echo -e "                  ${BLUE}Note:${NC}    By default only shows repositories needing attention"
+    echo -e "                  ${BLUE}Example:${NC} gits status-all"
+    echo -e "                  ${BLUE}Example:${NC} gits status-all --all --compact\n"
 
     echo -e "  ${GREEN}login${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactive login to selected platform"
@@ -1670,6 +1783,10 @@ main() {
             ;;
         clone-list)
             clone-list
+            ;;
+        status-all)
+            shift
+            status-all "$@"
             ;;
         install)
             install
