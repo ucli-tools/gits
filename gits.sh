@@ -64,6 +64,215 @@ clone() {
     fi
 }
 
+# Function to push changes to all repositories with uncommitted changes
+push-all() {
+    local dry_run=false
+    local batch_mode=false
+    local default_message=""
+    local skip_confirmation=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --dry-run|-n)
+                dry_run=true
+                shift
+                ;;
+            --batch|-b)
+                batch_mode=true
+                shift
+                ;;
+            --message|-m)
+                default_message="$2"
+                shift 2
+                ;;
+            --yes|-y)
+                skip_confirmation=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits push-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Interactively add, commit, and push changes across all dirty repositories${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  -n, --dry-run     Show what would be done without executing"
+                echo -e "  -b, --batch       Use same commit message for all repos"
+                echo -e "  -m, --message     Default commit message (use with --batch)"
+                echo -e "  -y, --yes         Skip confirmation prompts"
+                echo -e "  -h, --help        Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits push-all                           # Interactive mode"
+                echo -e "  gits push-all --batch -m \"Update docs\" # Batch with message"
+                echo -e "  gits push-all --dry-run                 # Preview actions"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits push-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Finding repositories with changes...${NC}"
+    echo -e ""
+    
+    local dirty_repos=()
+    local repo_info=()
+    
+    # Find all dirty repositories
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        cd "$repodir" || continue
+        
+        local status_output=$(git status --porcelain 2>/dev/null)
+        local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        
+        if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
+            dirty_repos+=("$repodir")
+            repo_info+=("$status_output|$unpushed")
+        fi
+        
+        cd - >/dev/null 2>&1
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ ${#dirty_repos[@]} -eq 0 ]]; then
+        echo -e "${GREEN}✅ All repositories are clean! Nothing to push.${NC}"
+        return 0
+    fi
+    
+    echo -e "${ORANGE}Found ${#dirty_repos[@]} repositories with changes:${NC}"
+    for i in "${!dirty_repos[@]}"; do
+        echo -e "  ${BLUE}$((i+1)). ${dirty_repos[i]}${NC}"
+    done
+    echo -e ""
+    
+    if [[ "$dry_run" == true ]]; then
+        echo -e "${ORANGE}DRY RUN MODE - No changes will be made${NC}"
+        echo -e ""
+    fi
+    
+    # Get batch commit message if in batch mode
+    if [[ "$batch_mode" == true ]] && [[ -z "$default_message" ]]; then
+        echo -e "${GREEN}Enter commit message for all repositories:${NC}"
+        read -r default_message
+        if [[ -z "$default_message" ]]; then
+            echo -e "${RED}Error: Commit message cannot be empty in batch mode${NC}"
+            return 1
+        fi
+    fi
+    
+    # Process each repository
+    local processed=0
+    local skipped=0
+    local failed=0
+    
+    for i in "${!dirty_repos[@]}"; do
+        local repodir="${dirty_repos[i]}"
+        local info="${repo_info[i]}"
+        local status_output=$(echo "$info" | cut -d'|' -f1)
+        local unpushed=$(echo "$info" | cut -d'|' -f2)
+        
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📁 Repository: $repodir${NC} ($((i+1))/${#dirty_repos[@]})"
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        
+        cd "$repodir" || continue
+        
+        # Show current status
+        if [[ -n "$status_output" ]]; then
+            echo -e "${ORANGE}Uncommitted changes:${NC}"
+            git status --short
+        fi
+        
+        if [[ "$unpushed" -gt 0 ]]; then
+            echo -e "${ORANGE}Unpushed commits: $unpushed${NC}"
+        fi
+        
+        echo -e ""
+        
+        # Skip confirmation in batch mode with --yes
+        if [[ "$batch_mode" == true ]] && [[ "$skip_confirmation" == true ]]; then
+            action="y"
+        elif [[ "$batch_mode" == true ]]; then
+            echo -e "${GREEN}Process this repository with message: \"$default_message\"? (y/n/s/q):${NC}"
+            read -r action
+        else
+            echo -e "${GREEN}Actions: (y)es, (n)o, (s)kip, (q)uit${NC}"
+            read -r action
+        fi
+        
+        case "$action" in
+            y|Y|yes|Yes)
+                if [[ "$dry_run" == true ]]; then
+                    echo -e "${ORANGE}[DRY RUN] Would add, commit, and push changes${NC}"
+                    processed=$((processed + 1))
+                else
+                    # Get commit message
+                    local commit_msg="$default_message"
+                    if [[ "$batch_mode" == false ]]; then
+                        echo -e "${GREEN}Enter commit message (or press Enter for auto-generated):${NC}"
+                        read -r user_msg
+                        if [[ -n "$user_msg" ]]; then
+                            commit_msg="$user_msg"
+                        else
+                            # Auto-generate commit message based on changes
+                            commit_msg="Update $(basename "$repodir"): $(date '+%Y-%m-%d %H:%M')"
+                        fi
+                    fi
+                    
+                    echo -e "${BLUE}Adding changes...${NC}"
+                    if git add -A; then
+                        echo -e "${BLUE}Committing with message: \"$commit_msg\"${NC}"
+                        if git commit -m "$commit_msg"; then
+                            echo -e "${BLUE}Pushing to remote...${NC}"
+                            if git push; then
+                                echo -e "${GREEN}✅ Successfully pushed $repodir${NC}"
+                                processed=$((processed + 1))
+                            else
+                                echo -e "${RED}❌ Failed to push $repodir${NC}"
+                                failed=$((failed + 1))
+                            fi
+                        else
+                            echo -e "${RED}❌ Failed to commit $repodir${NC}"
+                            failed=$((failed + 1))
+                        fi
+                    else
+                        echo -e "${RED}❌ Failed to add changes in $repodir${NC}"
+                        failed=$((failed + 1))
+                    fi
+                fi
+                ;;
+            s|S|skip|Skip)
+                echo -e "${ORANGE}⏭️  Skipped $repodir${NC}"
+                skipped=$((skipped + 1))
+                ;;
+            q|Q|quit|Quit)
+                echo -e "${ORANGE}🛑 Aborted by user${NC}"
+                break
+                ;;
+            *)
+                echo -e "${ORANGE}⏭️  Skipped $repodir (invalid choice)${NC}"
+                skipped=$((skipped + 1))
+                ;;
+        esac
+        
+        echo -e ""
+        cd - >/dev/null 2>&1
+    done
+    
+    # Final summary
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}Summary:${NC}"
+    echo -e "  ${GREEN}Processed: $processed${NC}"
+    echo -e "  ${ORANGE}Skipped: $skipped${NC}"
+    if [[ "$failed" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed${NC}"
+    fi
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+}
+
 # Function to check status of all repositories
 status-all() {
     local show_clean=false
@@ -1681,6 +1890,13 @@ help() {
     echo -e "                  ${BLUE}Note:${NC}    By default only shows repositories needing attention"
     echo -e "                  ${BLUE}Example:${NC} gits status-all"
     echo -e "                  ${BLUE}Example:${NC} gits status-all --all --compact\n"
+    
+    echo -e "  ${GREEN}push-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Interactively add, commit, and push changes across all dirty repositories"
+    echo -e "                  ${BLUE}Options:${NC} --batch (same message), --dry-run (preview), --yes (skip prompts)"
+    echo -e "                  ${BLUE}Note:${NC}    Interactive workflow with safety features and auto-generated messages"
+    echo -e "                  ${BLUE}Example:${NC} gits push-all"
+    echo -e "                  ${BLUE}Example:${NC} gits push-all --batch -m \"Update documentation\"\n"
 
     echo -e "  ${GREEN}login${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactive login to selected platform"
@@ -1787,6 +2003,10 @@ main() {
         status-all)
             shift
             status-all "$@"
+            ;;
+        push-all)
+            shift
+            push-all "$@"
             ;;
         install)
             install
