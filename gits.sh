@@ -2166,18 +2166,24 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits logout\n"
     
     echo -e "  ${GREEN}install${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} Install GitS to /usr/local/bin"
+    echo -e "                  ${BLUE}Actions:${NC} Install GitS globally"
     echo -e "                  ${BLUE}Example:${NC} gits install\n"
     
     echo -e "  ${GREEN}uninstall${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} Remove GitS from /usr/local/bin"
+    echo -e "                  ${BLUE}Actions:${NC} Remove GitS from system"
     echo -e "                  ${BLUE}Example:${NC} gits uninstall\n"
     
     echo -e "  ${GREEN}help${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} Display this help message"
+    echo -e "                  ${BLUE}Actions:${NC} Show this help message"
     echo -e "                  ${BLUE}Example:${NC} gits help\n"
     
-    echo -e "${PURPLE}Git Commands:${NC}"
+    echo -e "${ORANGE}═══════════════════════════════════════════${NC}"
+    
+    echo -e "${PURPLE}QUICK REFERENCE - PR WORKFLOWS:${NC}"
+    echo -e "${BLUE}Interactive:${NC} gits pr create"
+    echo -e "${BLUE}Parameterized:${NC} gits pr create --title 'My PR' --base development"
+    echo -e "${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development && gits pr merge --pr-number $(gits pr-latest)"
+    echo -e "${BLUE}Current Branch:${NC} gits pr create --title 'My changes' --base development"
     echo -e "  ${BLUE}All standard Git commands are supported through automatic passthrough${NC}"
     echo -e "  ${BLUE}Example:${NC} gits status       → runs git status"
     echo -e "  ${BLUE}Example:${NC} gits log          → runs git log"
