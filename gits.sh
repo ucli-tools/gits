@@ -858,29 +858,76 @@ delete() {
     fi
 }
 
+# Function to detect platform based on remote URL
+detect_platform() {
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+    if [[ $remote_url == *"github.com"* ]]; then
+        echo "2"  # GitHub
+    elif [[ $remote_url == *"git.ourworld.tf"* ]] || [[ $remote_url == *"gitea"* ]]; then
+        echo "1"  # Gitea
+    else
+        echo "2"  # Default to GitHub
+    fi
+}
+
+# Function to get the latest PR number regardless of platform
+get_latest_pr_number() {
+    local platform_choice=$(detect_platform)
+    
+    if [ "$platform_choice" = "1" ]; then
+        # Gitea - use tea
+        tea pr list --output simple 2>/dev/null | head -n 1 | awk '{print $1}' | sed 's/#//'
+    else
+        # GitHub - use gh
+        gh pr list --json number --jq '.[0].number' 2>/dev/null
+    fi
+}
+
 # Function to handle pull request operations
 pr() {
     if [ -z "$1" ]; then
         echo -e "${RED}Error: Please specify an action (create/close/merge)${NC}"
-        echo -e "Usage: gits pr <create|close|merge>"
+        echo -e "Usage: gits pr <create|close|merge> [options]"
+        echo -e "  create --title 'Title' --base main --head feature --body 'Description' [--platform github|gitea]"
+        echo -e "  merge --pr-number 123 [--platform github|gitea]"
         return 1
     fi
 
-    # Ask user which platform to use
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+    local action="$1"
+    shift
+    
+    # Parse platform option or auto-detect
+    local platform_choice=""
+    local args=("$@")
+    
+    for i in "${!args[@]}"; do
+        if [[ "${args[i]}" == "--platform" ]]; then
+            local platform_val="${args[i+1]}"
+            if [[ "$platform_val" == "gitea" ]]; then
+                platform_choice="1"
+            elif [[ "$platform_val" == "github" ]]; then
+                platform_choice="2"
+            fi
+            # Remove platform args from array
+            unset 'args[i]' 'args[i+1]'
+            break
+        fi
+    done
+    
+    # Auto-detect platform if not specified
+    if [ -z "$platform_choice" ]; then
+        platform_choice=$(detect_platform)
+    fi
 
-    case "$1" in
+    case "$action" in
         create)
-            pr_create "$platform_choice"
+            pr_create "$platform_choice" "${args[@]}"
             ;;
         close)
-            pr_close "$platform_choice"
+            pr_close "$platform_choice" "${args[@]}"
             ;;
         merge)
-            pr_merge "$platform_choice"
+            pr_merge "$platform_choice" "${args[@]}"
             ;;
         *)
             echo -e "${RED}Invalid action. Use create, close, or merge${NC}"
@@ -892,70 +939,185 @@ pr() {
 # Function to create a pull request
 pr_create() {
     local platform_choice=$1
+    shift
+    
+    # Parse arguments
+    local title="" base="main" head="" description="" target_org="" target_repo="" interactive=true
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --title)
+                title="$2"
+                interactive=false
+                shift 2
+                ;;
+            --base)
+                base="$2"
+                shift 2
+                ;;
+            --head)
+                head="$2"
+                interactive=false
+                shift 2
+                ;;
+            --body|--description)
+                description="$2"
+                shift 2
+                ;;
+            --repo)
+                if [[ "$2" == *"/"* ]]; then
+                    target_org=$(echo "$2" | cut -d'/' -f1)
+                    target_repo=$(echo "$2" | cut -d'/' -f2)
+                else
+                    target_repo="$2"
+                fi
+                shift 2
+                ;;
+            --org)
+                target_org="$2"
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}"
+                return 1
+                ;;
+        esac
+    done
 
     if [ "$platform_choice" = "1" ]; then
-        # Show current PRs
-        echo -e "${BLUE}Current Pull Requests:${NC}"
-        tea pr list
+        # Gitea PR creation
+        if [ "$interactive" = "true" ]; then
+            # Show current PRs
+            echo -e "${BLUE}Current Pull Requests:${NC}"
+            tea pr list
 
-        # Get the full repository path from git remote
-        remote_url=$(git remote get-url origin)
-        echo -e "Remote URL: $remote_url"
+            # Get the full repository path from git remote
+            remote_url=$(git remote get-url origin)
+            echo -e "Remote URL: $remote_url"
 
-        echo -e "${GREEN}Enter target organization or username:${NC}"
-        read target_org
+            echo -e "${GREEN}Enter target organization or username:${NC}"
+            read target_org
 
-        echo -e "${GREEN}Enter target repository name:${NC}"
-        read target_repo
+            echo -e "${GREEN}Enter target repository name:${NC}"
+            read target_repo
 
-        echo -e "${GREEN}Enter Pull Request title:${NC}"
-        read title
+            echo -e "${GREEN}Enter Pull Request title:${NC}"
+            read title
 
-        echo -e "${GREEN}Enter base branch (default: main):${NC}"
-        read base
-        base=${base:-main}
+            echo -e "${GREEN}Enter base branch (default: main):${NC}"
+            read base
+            base=${base:-main}
 
-        echo -e "${GREEN}Enter head branch:${NC}"
-        read head
+            echo -e "${GREEN}Enter head branch:${NC}"
+            read head
 
-        echo -e "${GREEN}Enter PR description (optional):${NC}"
-        read description
+            echo -e "${GREEN}Enter PR description (optional):${NC}"
+            read description
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$title" ]; then
+                echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
+                return 1
+            fi
+            
+            # Auto-detect current branch if --head not provided
+            if [ -z "$head" ]; then
+                head=$(git branch --show-current 2>/dev/null)
+                if [ -z "$head" ]; then
+                    echo -e "${RED}Error: Could not detect current branch. Please specify --head${NC}"
+                    return 1
+                fi
+            fi
+            
+            # Auto-detect repo if not provided
+            if [ -z "$target_org" ] || [ -z "$target_repo" ]; then
+                local remote_url=$(git remote get-url origin)
+                local repo_path=""
+                
+                if [[ $remote_url == *"git@"* ]]; then
+                    # SSH URL format: git@host:org/repo.git
+                    repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+                elif [[ $remote_url == *"https://"* ]]; then
+                    # HTTPS URL format: https://host/org/repo.git
+                    repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+                fi
+                
+                if [ -n "$repo_path" ] && [[ $repo_path == *"/"* ]]; then
+                    target_org=$(echo "$repo_path" | cut -d'/' -f1)
+                    target_repo=$(echo "$repo_path" | cut -d'/' -f2)
+                fi
+            fi
+        fi
 
         # Construct the full repository path
-        full_repo="${target_org}/${target_repo}"
+        local full_repo="${target_org}/${target_repo}"
         echo -e "\n${PURPLE}Creating Pull Request to ${full_repo}...${NC}"
         
-        if [ -n "$description" ]; then
-            tea pr create \
-                --repo "$full_repo" \
-                --title "$title" \
-                --base "$base" \
-                --head "$head" \
-                --description "$description"
+        # For Gitea, check if we're creating PR in the same repo
+        local current_repo_path=""
+        local remote_url=$(git remote get-url origin)
+        if [[ $remote_url == *"git@"* ]]; then
+            current_repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+        elif [[ $remote_url == *"https://"* ]]; then
+            current_repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+        fi
+        
+        # If creating PR in same repo, use simple branch names
+        if [ "$current_repo_path" = "$full_repo" ]; then
+            if [ -n "$description" ]; then
+                tea pr create \
+                    --title "$title" \
+                    --base "$base" \
+                    --head "$head" \
+                    --description "$description"
+            else
+                tea pr create \
+                    --title "$title" \
+                    --base "$base" \
+                    --head "$head"
+            fi
         else
-            tea pr create \
-                --repo "$full_repo" \
-                --title "$title" \
-                --base "$base" \
-                --head "$head"
+            # Cross-repo PR, use full repo specification
+            if [ -n "$description" ]; then
+                tea pr create \
+                    --repo "$full_repo" \
+                    --title "$title" \
+                    --base "$base" \
+                    --head "$head" \
+                    --description "$description"
+            else
+                tea pr create \
+                    --repo "$full_repo" \
+                    --title "$title" \
+                    --base "$base" \
+                    --head "$head"
+            fi
         fi
     else
         # GitHub PR creation
-        echo -e "${BLUE}Current Pull Requests:${NC}"
-        gh pr list
+        if [ "$interactive" = "true" ]; then
+            echo -e "${BLUE}Current Pull Requests:${NC}"
+            gh pr list
 
-        echo -e "${GREEN}Enter Pull Request title:${NC}"
-        read title
+            echo -e "${GREEN}Enter Pull Request title:${NC}"
+            read title
 
-        echo -e "${GREEN}Enter base branch (default: main):${NC}"
-        read base
-        base=${base:-main}
+            echo -e "${GREEN}Enter base branch (default: main):${NC}"
+            read base
+            base=${base:-main}
 
-        echo -e "${GREEN}Enter head branch:${NC}"
-        read head
+            echo -e "${GREEN}Enter head branch:${NC}"
+            read head
 
-        echo -e "${GREEN}Enter PR description:${NC}"
-        read description
+            echo -e "${GREEN}Enter PR description:${NC}"
+            read description
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$title" ] || [ -z "$head" ]; then
+                echo -e "${RED}Error: --title and --head are required for non-interactive mode${NC}"
+                return 1
+            fi
+        fi
 
         echo -e "\n${PURPLE}Creating Pull Request...${NC}"
         gh pr create --base "$base" --head "$head" --title "$title" --body "$description"
@@ -995,71 +1157,161 @@ pr_close() {
 # Function to merge a pull request
 pr_merge() {
     local platform_choice=$1
+    shift
+    
+    # Parse arguments
+    local pr_number="" repo="" merge_title="" merge_message="" delete_branch="" branch_name="" interactive=true
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --pr-number|--number)
+                pr_number="$2"
+                interactive=false
+                shift 2
+                ;;
+            --repo)
+                repo="$2"
+                shift 2
+                ;;
+            --title)
+                merge_title="$2"
+                shift 2
+                ;;
+            --message)
+                merge_message="$2"
+                shift 2
+                ;;
+            --delete-branch)
+                delete_branch="y"
+                shift
+                ;;
+            --branch-name)
+                branch_name="$2"
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}"
+                return 1
+                ;;
+        esac
+    done
 
     if [ "$platform_choice" = "1" ]; then
-        # Show current PRs
-        echo -e "${BLUE}Current Pull Requests:${NC}"
-        tea pr
+        # Gitea PR merge
+        if [ "$interactive" = "true" ]; then
+            # Show current PRs
+            echo -e "${BLUE}Current Pull Requests:${NC}"
+            tea pr
 
-        echo -e "\n${GREEN}Enter repository (organization/repository):${NC}"
-        read repo
+            echo -e "\n${GREEN}Enter repository (organization/repository):${NC}"
+            read repo
 
-        echo -e "${GREEN}Enter PR number to merge:${NC}"
-        read pr_number
+            echo -e "${GREEN}Enter PR number to merge:${NC}"
+            read pr_number
 
-        echo -e "${GREEN}Enter merge commit title:${NC}"
-        read merge_title
+            echo -e "${GREEN}Enter merge commit title:${NC}"
+            read merge_title
 
-        echo -e "${GREEN}Enter merge commit message:${NC}"
-        read merge_message
+            echo -e "${GREEN}Enter merge commit message:${NC}"
+            read merge_message
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$pr_number" ]; then
+                echo -e "${RED}Error: --pr-number is required for non-interactive mode${NC}"
+                return 1
+            fi
+            
+            # Auto-detect repo if not provided
+            if [ -z "$repo" ]; then
+                local remote_url=$(git remote get-url origin)
+                local repo_path=""
+                
+                if [[ $remote_url == *"git@"* ]]; then
+                    # SSH URL format: git@host:org/repo.git
+                    repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+                elif [[ $remote_url == *"https://"* ]]; then
+                    # HTTPS URL format: https://host/org/repo.git
+                    repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+                fi
+                
+                if [ -n "$repo_path" ] && [[ $repo_path == *"/"* ]]; then
+                    repo="$repo_path"
+                fi
+            fi
+            
+            # Set default merge title/message if not provided
+            if [ -z "$merge_title" ]; then
+                merge_title="Merge PR #$pr_number"
+            fi
+            if [ -z "$merge_message" ]; then
+                merge_message="Merged via gits script"
+            fi
+        fi
 
         echo -e "\n${PURPLE}Merging Pull Request #$pr_number...${NC}"
         tea pr merge --repo "$repo" --title "$merge_title" --message "$merge_message" "$pr_number"
 
         # Branch deletion option only for Gitea
-        echo -e "\n${GREEN}Would you like to delete the branch locally? (y/n)${NC}"
-        read delete_branch
+        if [ "$interactive" = "true" ] && [ -z "$delete_branch" ]; then
+            echo -e "\n${GREEN}Would you like to delete the branch locally? (y/n)${NC}"
+            read delete_branch
+        fi
 
         if [[ $delete_branch == "y" ]]; then
-            echo -e "${GREEN}Enter branch name to delete:${NC}"
-            read branch_name
-            
-            # Get the default branch (usually main or master)
-            default_branch=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
-            
-            # If we couldn't get the default branch, ask the user
-            if [ -z "$default_branch" ]; then
-                echo -e "${GREEN}Enter the name of your main branch (main/master):${NC}"
-                read default_branch
-                default_branch=${default_branch:-main}
+            if [ "$interactive" = "true" ] && [ -z "$branch_name" ]; then
+                echo -e "${GREEN}Enter branch name to delete:${NC}"
+                read branch_name
             fi
             
-            # Switch to the default branch first
-            if git checkout "$default_branch"; then
-                if git branch -d "$branch_name"; then
-                    echo -e "${PURPLE}Branch deleted locally.${NC}"
-                    
-                    echo -e "${GREEN}Push branch deletion to remote? (y/n)${NC}"
-                    read push_delete
+            if [ -n "$branch_name" ]; then
+                # Get the default branch (usually main or master)
+                default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+                
+                # If we couldn't get the default branch, use main as default
+                if [ -z "$default_branch" ]; then
+                    default_branch="main"
+                fi
+                
+                # Switch to the default branch first
+                if git checkout "$default_branch"; then
+                    if git branch -d "$branch_name"; then
+                        echo -e "${PURPLE}Branch deleted locally.${NC}"
+                        
+                        if [ "$interactive" = "true" ]; then
+                            echo -e "${GREEN}Push branch deletion to remote? (y/n)${NC}"
+                            read push_delete
+                        else
+                            push_delete="y"  # Auto-push in non-interactive mode
+                        fi
 
-                    if [[ $push_delete == "y" ]]; then
-                        git push origin :"$branch_name"
-                        echo -e "${PURPLE}Branch deletion pushed to remote.${NC}"
+                        if [[ $push_delete == "y" ]]; then
+                            git push origin :"$branch_name"
+                            echo -e "${PURPLE}Branch deletion pushed to remote.${NC}"
+                        fi
+                    else
+                        echo -e "${RED}Failed to delete branch locally.${NC}"
                     fi
                 else
-                    echo -e "${RED}Failed to delete branch locally.${NC}"
+                    echo -e "${RED}Failed to switch to $default_branch branch. Branch deletion aborted.${NC}"
                 fi
-            else
-                echo -e "${RED}Failed to switch to $default_branch branch. Branch deletion aborted.${NC}"
             fi
         fi
     else
-        # Show current PRs
-        echo -e "${BLUE}Current Pull Requests:${NC}"
-        gh pr list
+        # GitHub PR merge
+        if [ "$interactive" = "true" ]; then
+            # Show current PRs
+            echo -e "${BLUE}Current Pull Requests:${NC}"
+            gh pr list
 
-        echo -e "${GREEN}Enter PR number to merge:${NC}"
-        read pr_number
+            echo -e "${GREEN}Enter PR number to merge:${NC}"
+            read pr_number
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$pr_number" ]; then
+                echo -e "${RED}Error: --pr-number is required for non-interactive mode${NC}"
+                return 1
+            fi
+        fi
 
         echo -e "\n${PURPLE}Merging Pull Request #$pr_number...${NC}"
         gh pr merge "$pr_number"
@@ -1956,6 +2208,9 @@ main() {
         pr)
             shift
             pr "$@"
+            ;;
+        pr-latest)
+            get_latest_pr_number
             ;;
         delete)
             shift
