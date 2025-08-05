@@ -2081,7 +2081,7 @@ help() {
     echo -e "                  ${BLUE}Actions:${NC} create, close, merge"
     echo -e "                  ${BLUE}Interactive:${NC} gits pr create"
     echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
-    echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number $(gits pr-latest)"
+    echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature\n"
     
@@ -2182,7 +2182,7 @@ help() {
     echo -e "${PURPLE}QUICK REFERENCE - PR WORKFLOWS:${NC}"
     echo -e "${BLUE}Interactive:${NC} gits pr create"
     echo -e "${BLUE}Parameterized:${NC} gits pr create --title 'My PR' --base development"
-    echo -e "${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development && gits pr merge --pr-number $(gits pr-latest)"
+    echo -e "${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "${BLUE}Current Branch:${NC} gits pr create --title 'My changes' --base development"
     echo -e "  ${BLUE}All standard Git commands are supported through automatic passthrough${NC}"
     echo -e "  ${BLUE}Example:${NC} gits status       → runs git status"
