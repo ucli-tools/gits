@@ -2077,11 +2077,18 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits pull"
     echo -e "                  ${BLUE}Example:${NC} gits pull main\n"
     
-    echo -e "  ${GREEN}pr <action>${NC}"
+    echo -e "  ${GREEN}pr <action> [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} create, close, merge"
-    echo -e "                  ${BLUE}Example:${NC} gits pr create"
+    echo -e "                  ${BLUE}Interactive:${NC} gits pr create"
+    echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
+    echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number $(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
-    echo -e "                  ${BLUE}Example:${NC} gits pr merge\n"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature\n"
+    
+    echo -e "  ${GREEN}pr-latest${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Get the latest PR number regardless of platform"
+    echo -e "                  ${BLUE}Example:${NC} gits pr-latest"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number $(gits pr-latest)\n"
     
     echo -e "  ${GREEN}commit${NC}"
     echo -e "                  ${BLUE}Actions:${NC} prompt for commit message, commit"
