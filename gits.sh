@@ -1181,7 +1181,7 @@ pr_merge() {
                 merge_message="$2"
                 shift 2
                 ;;
-            --delete-branch)
+            --delete-branch|-d)
                 delete_branch="y"
                 shift
                 ;;
@@ -2083,7 +2083,8 @@ help() {
     echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
     echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
-    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature\n"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 -d --branch-name feature\n"
     
     echo -e "  ${GREEN}pr-latest${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Get the latest PR number regardless of platform"
