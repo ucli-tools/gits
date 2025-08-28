@@ -1113,9 +1113,18 @@ pr_create() {
             read description
         else
             # Validate required parameters for non-interactive mode
-            if [ -z "$title" ] || [ -z "$head" ]; then
-                echo -e "${RED}Error: --title and --head are required for non-interactive mode${NC}"
+            if [ -z "$title" ]; then
+                echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
                 return 1
+            fi
+            
+            # Auto-detect current branch if --head not provided
+            if [ -z "$head" ]; then
+                head=$(git branch --show-current 2>/dev/null)
+                if [ -z "$head" ]; then
+                    echo -e "${RED}Error: Could not detect current branch. Please specify --head${NC}"
+                    return 1
+                fi
             fi
         fi
 
