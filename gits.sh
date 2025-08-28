@@ -1113,9 +1113,18 @@ pr_create() {
             read description
         else
             # Validate required parameters for non-interactive mode
-            if [ -z "$title" ] || [ -z "$head" ]; then
-                echo -e "${RED}Error: --title and --head are required for non-interactive mode${NC}"
+            if [ -z "$title" ]; then
+                echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
                 return 1
+            fi
+            
+            # Auto-detect current branch if --head not provided
+            if [ -z "$head" ]; then
+                head=$(git branch --show-current 2>/dev/null)
+                if [ -z "$head" ]; then
+                    echo -e "${RED}Error: Could not detect current branch. Please specify --head${NC}"
+                    return 1
+                fi
             fi
         fi
 
@@ -1181,7 +1190,7 @@ pr_merge() {
                 merge_message="$2"
                 shift 2
                 ;;
-            --delete-branch)
+            --delete-branch|-d)
                 delete_branch="y"
                 shift
                 ;;
@@ -2083,7 +2092,8 @@ help() {
     echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
     echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
-    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature\n"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 -d --branch-name feature\n"
     
     echo -e "  ${GREEN}pr-latest${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Get the latest PR number regardless of platform"
