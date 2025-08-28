@@ -1338,18 +1338,42 @@ pull() {
 push() {
     local branch=""
     local commit_message=""
+    local use_pal=false
+    local use_pal_yolo=false
 
-    # If arguments are provided
-    if [ $# -gt 0 ]; then
-        # First argument is the branch
-        branch="$1"
-        shift
-        
-        # Remaining arguments form the commit message
-        if [ $# -gt 0 ]; then
-            commit_message="$*"
-        fi
-    fi
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p)
+                use_pal=true
+                shift
+                ;;
+            -py)
+                use_pal_yolo=true
+                shift
+                ;;
+            *)
+                # First non-flag argument is the branch
+                if [ -z "$branch" ]; then
+                    branch="$1"
+                    shift
+                    # Remaining arguments form the commit message
+                    if [ $# -gt 0 ]; then
+                        commit_message="$*"
+                        break
+                    fi
+                else
+                    # This is part of commit message
+                    if [ -z "$commit_message" ]; then
+                        commit_message="$1"
+                    else
+                        commit_message="$commit_message $1"
+                    fi
+                    shift
+                fi
+                ;;
+        esac
+    done
 
     # If branch was provided, checkout to it
     if [ ! -z "$branch" ]; then
@@ -1359,15 +1383,39 @@ push() {
         fi
     fi
 
-    git add .
+    # Handle commit based on flags
+    if [ "$use_pal_yolo" = true ]; then
+        echo -e "${BLUE}Using pal /commit -y for AI-generated commit message (auto-commit)${NC}"
+        if ! command -v pal &> /dev/null; then
+            echo -e "${RED}Error: pal command not found. Please install pal to use -py flag.${NC}"
+            return 1
+        fi
+        if ! pal /commit -y; then
+            echo -e "${RED}Failed to commit using pal /commit -y${NC}"
+            return 1
+        fi
+    elif [ "$use_pal" = true ]; then
+        echo -e "${BLUE}Using pal /commit for AI-generated commit message${NC}"
+        if ! command -v pal &> /dev/null; then
+            echo -e "${RED}Error: pal command not found. Please install pal to use -p flag.${NC}"
+            return 1
+        fi
+        if ! pal /commit; then
+            echo -e "${RED}Failed to commit using pal /commit${NC}"
+            return 1
+        fi
+    else
+        # Traditional commit flow
+        git add .
 
-    # If no commit message was provided in arguments, prompt for it
-    if [ -z "$commit_message" ]; then
-        echo "Enter commit message:"
-        read commit_message
+        # If no commit message was provided in arguments, prompt for it
+        if [ -z "$commit_message" ]; then
+            echo "Enter commit message:"
+            read commit_message
+        fi
+
+        git commit -m "$commit_message"
     fi
-
-    git commit -m "$commit_message"
 
     current_branch=$(git rev-parse --abbrev-ref HEAD)
     if git config --get branch."$current_branch".merge &>/dev/null; then
@@ -2072,13 +2120,17 @@ help() {
     echo -e "  3. If neither GitS nor Git recognizes the command, shows an error\n"
     
     echo -e "${PURPLE}GitS-specific commands:${NC}"
-    echo -e "  ${GREEN}push [branch] [commit-message]${NC}"
+    echo -e "  ${GREEN}push [branch] [commit-message] [-p] [-py]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} add all changes, commit with message, push"
     echo -e "                  ${BLUE}Note:${NC}    Automatically sets upstream branch if not set"
     echo -e "                  ${BLUE}Note:${NC}    If no commit message is provided, you'll be prompted"
+    echo -e "                  ${BLUE}Flag -p:${NC} Use pal /commit for AI-generated commit message (interactive)"
+    echo -e "                  ${BLUE}Flag -py:${NC} Use pal /commit -y for AI-generated commit message (auto-commit)"
     echo -e "                  ${BLUE}Example:${NC} gits push"
     echo -e "                  ${BLUE}Example:${NC} gits push main"
-    echo -e "                  ${BLUE}Example:${NC} gits push main \"Initial commit\"\n"
+    echo -e "                  ${BLUE}Example:${NC} gits push main \"Initial commit\""
+    echo -e "                  ${BLUE}Example:${NC} gits push -p"
+    echo -e "                  ${BLUE}Example:${NC} gits push -py\n"
     
     echo -e "  ${GREEN}pull [branch]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Checkout branch, stash changes, fetch, pull, show status"
