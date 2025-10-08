@@ -70,6 +70,8 @@ push-all() {
     local batch_mode=false
     local default_message=""
     local skip_confirmation=false
+    local use_pal=false
+    local use_pal_yolo=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -90,6 +92,14 @@ push-all() {
                 skip_confirmation=true
                 shift
                 ;;
+            -p)
+                use_pal=true
+                shift
+                ;;
+            -py)
+                use_pal_yolo=true
+                shift
+                ;;
             --help|-h)
                 echo -e "${GREEN}Usage: gits push-all [OPTIONS]${NC}"
                 echo -e "${BLUE}Interactively add, commit, and push changes across all dirty repositories${NC}"
@@ -99,12 +109,16 @@ push-all() {
                 echo -e "  -b, --batch       Use same commit message for all repos"
                 echo -e "  -m, --message     Default commit message (use with --batch)"
                 echo -e "  -y, --yes         Skip confirmation prompts"
+                echo -e "  -p                Use pal /commit for AI-generated commit messages (interactive)"
+                echo -e "  -py               Use pal /commit -y for AI-generated commit messages (auto-commit)"
                 echo -e "  -h, --help        Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
                 echo -e "  gits push-all                           # Interactive mode"
                 echo -e "  gits push-all --batch -m \"Update docs\" # Batch with message"
                 echo -e "  gits push-all --dry-run                 # Preview actions"
+                echo -e "  gits push-all -py                       # Use AI-generated messages (auto)"
+                echo -e "  gits push-all -p                        # Use AI-generated messages (interactive)"
                 return 0
                 ;;
             *)
@@ -211,36 +225,99 @@ push-all() {
                 else
                     # Get commit message
                     local commit_msg="$default_message"
-                    if [[ "$batch_mode" == false ]]; then
-                        echo -e "${GREEN}Enter commit message (or press Enter for auto-generated):${NC}"
-                        read -r user_msg
-                        if [[ -n "$user_msg" ]]; then
-                            commit_msg="$user_msg"
+                    local commit_success=false
+                    
+                    # Handle commit based on pal flags
+                    if [[ "$use_pal_yolo" == true ]]; then
+                        echo -e "${BLUE}Using pal /commit -y for AI-generated commit message (auto-commit)${NC}"
+                        if ! command -v pal &> /dev/null; then
+                            echo -e "${RED}Error: pal command not found. Please install pal to use -py flag.${NC}"
+                            failed=$((failed + 1))
+                            cd - >/dev/null 2>&1
+                            continue
+                        fi
+                        echo -e "${BLUE}Adding changes...${NC}"
+                        if git add -A; then
+                            if pal /commit -y; then
+                                commit_success=true
+                            else
+                                echo -e "${RED}❌ Failed to commit using pal /commit -y${NC}"
+                                failed=$((failed + 1))
+                                cd - >/dev/null 2>&1
+                                continue
+                            fi
                         else
-                            # Auto-generate commit message based on changes
-                            commit_msg="Update $(basename "$repodir"): $(date '+%Y-%m-%d %H:%M')"
+                            echo -e "${RED}❌ Failed to add changes in $repodir${NC}"
+                            failed=$((failed + 1))
+                            cd - >/dev/null 2>&1
+                            continue
+                        fi
+                    elif [[ "$use_pal" == true ]]; then
+                        echo -e "${BLUE}Using pal /commit for AI-generated commit message${NC}"
+                        if ! command -v pal &> /dev/null; then
+                            echo -e "${RED}Error: pal command not found. Please install pal to use -p flag.${NC}"
+                            failed=$((failed + 1))
+                            cd - >/dev/null 2>&1
+                            continue
+                        fi
+                        echo -e "${BLUE}Adding changes...${NC}"
+                        if git add -A; then
+                            if pal /commit; then
+                                commit_success=true
+                            else
+                                echo -e "${RED}❌ Failed to commit using pal /commit${NC}"
+                                failed=$((failed + 1))
+                                cd - >/dev/null 2>&1
+                                continue
+                            fi
+                        else
+                            echo -e "${RED}❌ Failed to add changes in $repodir${NC}"
+                            failed=$((failed + 1))
+                            cd - >/dev/null 2>&1
+                            continue
+                        fi
+                    else
+                        # Standard commit flow
+                        if [[ "$batch_mode" == false ]]; then
+                            echo -e "${GREEN}Enter commit message (or press Enter for auto-generated):${NC}"
+                            read -r user_msg
+                            if [[ -n "$user_msg" ]]; then
+                                commit_msg="$user_msg"
+                            else
+                                # Auto-generate commit message based on changes
+                                commit_msg="Update $(basename "$repodir"): $(date '+%Y-%m-%d %H:%M')"
+                            fi
+                        fi
+                        
+                        echo -e "${BLUE}Adding changes...${NC}"
+                        if git add -A; then
+                            echo -e "${BLUE}Committing with message: \"$commit_msg\"${NC}"
+                            if git commit -m "$commit_msg"; then
+                                commit_success=true
+                            else
+                                echo -e "${RED}❌ Failed to commit $repodir${NC}"
+                                failed=$((failed + 1))
+                                cd - >/dev/null 2>&1
+                                continue
+                            fi
+                        else
+                            echo -e "${RED}❌ Failed to add changes in $repodir${NC}"
+                            failed=$((failed + 1))
+                            cd - >/dev/null 2>&1
+                            continue
                         fi
                     fi
                     
-                    echo -e "${BLUE}Adding changes...${NC}"
-                    if git add -A; then
-                        echo -e "${BLUE}Committing with message: \"$commit_msg\"${NC}"
-                        if git commit -m "$commit_msg"; then
-                            echo -e "${BLUE}Pushing to remote...${NC}"
-                            if git push; then
-                                echo -e "${GREEN}✅ Successfully pushed $repodir${NC}"
-                                processed=$((processed + 1))
-                            else
-                                echo -e "${RED}❌ Failed to push $repodir${NC}"
-                                failed=$((failed + 1))
-                            fi
+                    # Push if commit was successful
+                    if [[ "$commit_success" == true ]]; then
+                        echo -e "${BLUE}Pushing to remote...${NC}"
+                        if git push; then
+                            echo -e "${GREEN}✅ Successfully pushed $repodir${NC}"
+                            processed=$((processed + 1))
                         else
-                            echo -e "${RED}❌ Failed to commit $repodir${NC}"
+                            echo -e "${RED}❌ Failed to push $repodir${NC}"
                             failed=$((failed + 1))
                         fi
-                    else
-                        echo -e "${RED}❌ Failed to add changes in $repodir${NC}"
-                        failed=$((failed + 1))
                     fi
                 fi
                 ;;
