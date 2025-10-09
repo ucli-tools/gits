@@ -129,6 +129,11 @@ push-all() {
         esac
     done
     
+    # Auto-enable skip_confirmation when using -py (yolo mode)
+    if [[ "$use_pal_yolo" == true ]]; then
+        skip_confirmation=true
+    fi
+    
     echo -e "${GREEN}Finding repositories with changes...${NC}"
     echo -e ""
     
@@ -206,8 +211,8 @@ push-all() {
         
         echo -e ""
         
-        # Skip confirmation in batch mode with --yes
-        if [[ "$batch_mode" == true ]] && [[ "$skip_confirmation" == true ]]; then
+        # Skip confirmation in batch mode with --yes or when using -py
+        if [[ "$skip_confirmation" == true ]]; then
             action="y"
         elif [[ "$batch_mode" == true ]]; then
             echo -e "${GREEN}Process this repository with message: \"$default_message\"? (y/n/s/q):${NC}"
@@ -311,12 +316,20 @@ push-all() {
                     # Push if commit was successful
                     if [[ "$commit_success" == true ]]; then
                         echo -e "${BLUE}Pushing to remote...${NC}"
-                        if git push; then
+                        if git push 2>/dev/null; then
                             echo -e "${GREEN}✅ Successfully pushed $repodir${NC}"
                             processed=$((processed + 1))
                         else
-                            echo -e "${RED}❌ Failed to push $repodir${NC}"
-                            failed=$((failed + 1))
+                            # Try with --set-upstream if regular push failed
+                            local current_branch=$(git branch --show-current)
+                            echo -e "${ORANGE}Regular push failed, trying with --set-upstream origin $current_branch${NC}"
+                            if git push --set-upstream origin "$current_branch"; then
+                                echo -e "${GREEN}✅ Successfully pushed $repodir (set upstream)${NC}"
+                                processed=$((processed + 1))
+                            else
+                                echo -e "${RED}❌ Failed to push $repodir${NC}"
+                                failed=$((failed + 1))
+                            fi
                         fi
                     fi
                 fi
