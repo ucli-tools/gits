@@ -1580,6 +1580,36 @@ commit() {
     git commit -m "$commit_message"
 }
 
+# Function to perform quick up operation (add, pal commit, push)
+up() {
+    echo -e "${BLUE}Running quick up: git add . && pal /commit -y && git push${NC}"
+    
+    # Check if pal is available
+    if ! command -v pal &> /dev/null; then
+        echo -e "${RED}Error: pal command not found. Please install pal to use the up command.${NC}"
+        return 1
+    fi
+    
+    # Stage all changes
+    git add .
+    
+    # Commit using pal with auto-confirm
+    if ! pal /commit -y; then
+        echo -e "${RED}Failed to commit using pal /commit -y${NC}"
+        return 1
+    fi
+    
+    # Push changes
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    if git config --get branch."$current_branch".merge &>/dev/null; then
+        echo -e "${GREEN}Pushing changes to existing upstream branch${NC}"
+        git push
+    else
+        echo -e "${ORANGE}No upstream branch set. Setting upstream to origin/$current_branch${NC}"
+        git push --set-upstream origin "$current_branch"
+    fi
+}
+
 # Function to handle repository operations
 repo() {
     if [ -z "$1" ]; then
@@ -2278,6 +2308,12 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits push -p"
     echo -e "                  ${BLUE}Example:${NC} gits push -py\n"
     
+    echo -e "  ${GREEN}up${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Quick workflow: git add . && pal /commit -y && git push"
+    echo -e "                  ${BLUE}Note:${NC}    Automatically stages all changes, commits with AI-generated message, and pushes"
+    echo -e "                  ${BLUE}Note:${NC}    Requires pal command to be installed"
+    echo -e "                  ${BLUE}Example:${NC} gits up\n"
+    
     echo -e "  ${GREEN}pull [branch]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Checkout branch, stash changes, fetch, pull, show status"
     echo -e "                  ${BLUE}Note:${NC}    Default branch is 'development' if not specified"
@@ -2450,6 +2486,9 @@ main() {
             ;;
         commit)
             commit
+            ;;
+        up)
+            up
             ;;
         init)
             init

@@ -122,6 +122,10 @@ After installation, you can use GitS with the following commands:
   - Stages all changes
   - Prompts for commit message
   - Sets upstream branch if needed
+- `gits up` - Quick workflow with AI-generated commit
+  - Executes: git add . && pal /commit -y && git push
+  - Automatically stages all changes, commits with AI-generated message, and pushes
+  - Requires pal command to be installed
 - `gits commit` - Commit changes with a message
   - Prompts for commit message
 
