@@ -470,17 +470,71 @@ status-all() {
 }
 
 clone-all() {
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+    local platform_choice=""
+    local USERNAME=""
+    local GITEA_SERVER=""
+    
+    # Check if URL/username argument is provided
+    if [ -n "$1" ]; then
+        # Non-interactive mode with URL/username argument
+        local input="$1"
+        
+        # Detect platform and extract username from input
+        if [[ $input == *"github.com"* ]]; then
+            # GitHub URL format
+            platform_choice="2"
+            # Extract username from various GitHub URL formats
+            if [[ $input == http* ]]; then
+                USERNAME=$(echo "$input" | sed -E 's|https?://github.com/([^/]+).*|\1|')
+            else
+                # Handle github.com/username or just username
+                USERNAME=$(echo "$input" | sed 's|github.com/||' | sed 's|/.*||')
+            fi
+        elif [[ $input == *"git.ourworld.tf"* ]] || [[ $input == *"gitea"* ]]; then
+            # Gitea URL format
+            platform_choice="1"
+            if [[ $input == http* ]]; then
+                GITEA_SERVER=$(echo "$input" | sed -E 's|https?://([^/]+)/.*|\1|')
+                USERNAME=$(echo "$input" | sed -E 's|https?://[^/]+/([^/]+).*|\1|')
+            else
+                # Handle git.ourworld.tf/username format
+                GITEA_SERVER=$(echo "$input" | cut -d'/' -f1)
+                USERNAME=$(echo "$input" | cut -d'/' -f2)
+            fi
+        else
+            # Assume it's just a username for GitHub (most common case)
+            platform_choice="2"
+            USERNAME="$input"
+        fi
+        
+        if [ -z "$USERNAME" ]; then
+            echo -e "${RED}Error: Could not extract username from '$input'${NC}"
+            echo -e "${ORANGE}Usage: gits clone-all [URL|username]${NC}"
+            echo -e "${BLUE}Examples:${NC}"
+            echo -e "  gits clone-all myusername"
+            echo -e "  gits clone-all github.com/myusername"
+            echo -e "  gits clone-all https://github.com/myusername"
+            echo -e "  gits clone-all git.ourworld.tf/myorg"
+            return 1
+        fi
+        
+        echo -e "${GREEN}Detected platform: $([ "$platform_choice" = "1" ] && echo "Gitea" || echo "GitHub")${NC}"
+        echo -e "${GREEN}Username: $USERNAME${NC}"
+        [ -n "$GITEA_SERVER" ] && echo -e "${GREEN}Server: $GITEA_SERVER${NC}"
+    else
+        # Interactive mode (original behavior)
+        echo -e "${GREEN}Which platform would you like to use?${NC}"
+        echo -e "1) Gitea"
+        echo -e "2) GitHub"
+        read -p "Enter your choice (1/2): " platform_choice
 
-    echo -e "${GREEN}Enter the username:${NC}"
-    read USERNAME
+        echo -e "${GREEN}Enter the username:${NC}"
+        read USERNAME
 
-    if [ -z "$USERNAME" ]; then
-        echo -e "${RED}Error: Username cannot be empty.${NC}"
-        return 1
+        if [ -z "$USERNAME" ]; then
+            echo -e "${RED}Error: Username cannot be empty.${NC}"
+            return 1
+        fi
     fi
 
     # Create a directory for cloning
@@ -495,13 +549,15 @@ clone-all() {
     # Fetch repositories based on the selected platform
     case "$platform_choice" in
         1)
-            # For Gitea, we need to ask for the server URL
-            echo -e "${GREEN}Enter Gitea server URL (e.g., git.ourworld.tf):${NC}"
-            read GITEA_SERVER
-            
+            # For Gitea, we need to ask for the server URL if not already provided
             if [ -z "$GITEA_SERVER" ]; then
-                GITEA_SERVER="git.ourworld.tf"
-                echo -e "${ORANGE}Using default Gitea server: $GITEA_SERVER${NC}"
+                echo -e "${GREEN}Enter Gitea server URL (e.g., git.ourworld.tf):${NC}"
+                read GITEA_SERVER
+                
+                if [ -z "$GITEA_SERVER" ]; then
+                    GITEA_SERVER="git.ourworld.tf"
+                    echo -e "${ORANGE}Using default Gitea server: $GITEA_SERVER${NC}"
+                fi
             fi
             
             echo -e "${GREEN}Cloning all repositories for user: $USERNAME from $GITEA_SERVER${NC}"
@@ -2284,10 +2340,13 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits clone https://github.com/org/repo"
     echo -e "                  ${BLUE}Example:${NC} gits clone org/repo\n"
     
-    echo -e "  ${GREEN}clone-all${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user"
+    echo -e "  ${GREEN}clone-all [URL|username]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user (interactive or with argument)"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all\n"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all github.com/myusername"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all git.ourworld.tf/myorg\n"
     
     echo -e "  ${GREEN}clone-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user on selected platform"
