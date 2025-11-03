@@ -2665,7 +2665,52 @@ EOF
         echo -e "${GREEN}Saved: $filename${NC}"
         ((saved_count++))
         
+        echo -e "${GREEN}Saved: $filename${NC}"
+        ((saved_count++))
+        
     done < <(echo "$issues_json" | jq -c '.[]')
+    
+    # Sync functionality: Remove stale files for closed/resolved issues
+    echo -e "\n${BLUE}Syncing with repository state...${NC}"
+    local removed_count=0
+    local current_issues=()
+    
+    # Collect current issue numbers
+    while read -r issue; do
+        current_issues+=($(echo "$issue" | jq -r '.number // .id'))
+    done < <(echo "$issues_json" | jq -c '.[]')
+    
+    # Check for stale files
+    for file in "$output_dir"/*; do
+        if [[ -f "$file" ]]; then
+            local filename=$(basename "$file")
+            # Extract issue number from filename
+            local issue_num=$(echo "$filename" | sed 's/-.*$//' | sed 's/\.json$//' | sed 's/\.md$//')
+            
+            # Check if this issue number exists in current issues
+            local found=false
+            for current_num in "${current_issues[@]}"; do
+                if [[ "$current_num" == "$issue_num" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            
+            # Remove stale file
+            if [[ "$found" == false ]]; then
+                echo -e "${ORANGE}Removed stale file: $filename${NC}"
+                rm "$file"
+                ((removed_count++))
+            fi
+        fi
+    done
+    
+    if [[ $removed_count -gt 0 ]]; then
+        echo -e "${GREEN}Removed $removed_count stale files${NC}"
+    else
+        echo -e "${GREEN}All issue files are up to date${NC}"
+    fi
+        
     
     echo -e "\n${GREEN}Successfully saved $saved_count issues to $output_dir${NC}"
 }
