@@ -8,6 +8,48 @@ RED='\033[0;31m'
 ORANGE='\033[38;5;208m'
 NC='\033[0m' # No Color
 
+# Function to detect platform from git remote
+detect_platform() {
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+    if [[ -z "$remote_url" ]]; then
+        echo -e "${RED}Error: No git remote found${NC}"
+        return 1
+    fi
+    
+    if [[ "$remote_url" == *"github.com"* ]]; then
+        echo "github"
+        return 0
+    elif [[ "$remote_url" == *"git.ourworld.tf"* ]] || [[ "$remote_url" == *"gitea"* ]]; then
+        echo "gitea"
+        return 0
+    else
+        echo -e "${RED}Error: Unsupported platform from remote: $remote_url${NC}"
+        return 1
+    fi
+}
+
+# Function to extract repo info from git remote
+get_repo_info() {
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+    if [[ -z "$remote_url" ]]; then
+        echo -e "${RED}Error: No git remote found${NC}"
+        return 1
+    fi
+    
+    local repo_path=""
+    if [[ "$remote_url" == *"github.com"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*github\.com[:/](.*)(\.git)?|\1|')
+    elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
+    fi
+    
+    local owner=$(echo "$repo_path" | cut -d'/' -f1)
+    local repo=$(echo "$repo_path" | cut -d'/' -f2)
+    
+    echo "$owner/$repo"
+    return 0
+}
+
 # Function to clone a GitHub repository
 clone() {
     if [ -z "$1" ]; then
@@ -1008,19 +1050,41 @@ delete() {
 detect_platform() {
     local remote_url=$(git remote get-url origin 2>/dev/null)
     if [[ $remote_url == *"github.com"* ]]; then
-        echo "2"  # GitHub
+        echo "github"  # GitHub
     elif [[ $remote_url == *"git.ourworld.tf"* ]] || [[ $remote_url == *"gitea"* ]]; then
-        echo "1"  # Gitea
+        echo "gitea"  # Gitea
     else
-        echo "2"  # Default to GitHub
+        echo "github"  # Default to GitHub
     fi
+}
+
+# Function to extract repo info from git remote
+get_repo_info() {
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+    if [[ -z "$remote_url" ]]; then
+        echo -e "${RED}Error: No git remote found${NC}"
+        return 1
+    fi
+    
+    local repo_path=""
+    if [[ "$remote_url" == *"github.com"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*github\.com[:/](.*)(\.git)?|\1|')
+    elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
+    fi
+    
+    local owner=$(echo "$repo_path" | cut -d'/' -f1)
+    local repo=$(echo "$repo_path" | cut -d'/' -f2)
+    
+    echo "$owner/$repo"
+    return 0
 }
 
 # Function to get the latest PR number regardless of platform
 get_latest_pr_number() {
     local platform_choice=$(detect_platform)
     
-    if [ "$platform_choice" = "1" ]; then
+    if [ "$platform_choice" = "gitea" ]; then
         # Gitea - use tea
         tea pr list --output simple 2>/dev/null | head -n 1 | awk '{print $1}' | sed 's/#//'
     else
@@ -2278,6 +2342,334 @@ clone-list() {
     echo -e "\n${GREEN}Clone list operation completed${NC}"
 }
 
+# Function to fetch issues from the current repository
+fetch-issues() {
+    local state="open"
+    local format="display"
+    local repo_info=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --state)
+                state="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits fetch-issues [OPTIONS]${NC}"
+                echo -e "${BLUE}Fetch issues from the current repository${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
+                echo -e "  --format FORMAT  Output format: display, json (default: display)"
+                echo -e "  -h, --help       Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits fetch-issues                    # Fetch open issues (display format)"
+                echo -e "  gits fetch-issues --state all        # Fetch all issues"
+                echo -e "  gits fetch-issues --format json      # Fetch issues in JSON format"
+                echo -e "  gits fetch-issues --state closed     # Fetch closed issues"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits fetch-issues --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo -e "${RED}Error: Not in a git repository${NC}"
+        return 1
+    fi
+    
+    # Get repository info
+    if ! repo_info=$(get_repo_info); then
+        echo -e "${RED}Error: Could not determine repository information${NC}"
+        return 1
+    fi
+    
+    # Detect platform
+    local platform=$(detect_platform)
+    if [[ -z "$platform" ]]; then
+        echo -e "${RED}Error: Could not detect platform from git remote${NC}"
+        echo -e "${ORANGE}Supported platforms: GitHub, Gitea${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}Fetching $state issues for repository: $repo_info${NC}"
+    echo -e "${BLUE}Platform: $([ "$platform" = "gitea" ] && echo "Gitea" || echo "GitHub")${NC}"
+    echo -e ""
+    
+    local issues_json=""
+    
+    case "$platform" in
+        "1"|"gitea")
+            # Extract Gitea server info
+            local remote_url=$(git remote get-url origin 2>/dev/null)
+            local gitea_server=""
+            local gitea_token=""
+            
+            if [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
+                gitea_server="git.ourworld.tf"
+            else
+                echo -e "${RED}Error: Could not determine Gitea server${NC}"
+                return 1
+            fi
+            
+            # Check for authentication
+            echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
+            read -r use_auth
+            
+            local auth_header=""
+            if [[ $use_auth =~ ^[Yy]$ ]]; then
+                # Check if tea CLI is available
+                if ! command -v tea &> /dev/null; then
+                    echo -e "${RED}Error: tea CLI is required but not installed${NC}"
+                    return 1
+                fi
+                
+                # Get token from tea config
+                gitea_token=$(tea config get auth.$gitea_server.token 2>/dev/null)
+                if [ -n "$gitea_token" ]; then
+                    auth_header="Authorization: token $gitea_token"
+                    echo -e "${GREEN}Using token from tea configuration${NC}"
+                else
+                    echo -e "${ORANGE}Could not retrieve token from tea configuration${NC}"
+                fi
+            fi
+            
+            echo -e "${PURPLE}Fetching issues from Gitea...${NC}"
+            
+            # Extract owner and repo from repo_info
+            local owner=$(echo "$repo_info" | cut -d'/' -f1)
+            local repo=$(echo "$repo_info" | cut -d'/' -f2)
+            
+            # Construct API endpoint
+            local base_url="https://$gitea_server"
+            local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
+            
+            # Add state filter
+            if [[ "$state" != "all" ]]; then
+                api_endpoint="$api_endpoint?state=$state"
+            fi
+            
+            # Fetch issues
+            if [ -n "$auth_header" ]; then
+                issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
+            else
+                issues_json=$(curl -s "$api_endpoint")
+            fi
+            
+            # Check if we got valid JSON
+            if ! echo "$issues_json" | jq . &>/dev/null; then
+                echo -e "${RED}Error: Failed to get valid JSON response from Gitea API${NC}"
+                echo -e "${ORANGE}Response: $issues_json${NC}"
+                return 1
+            fi
+            ;;
+        "2"|"github"|*)
+            # Check if gh is available
+            if ! command -v gh &> /dev/null; then
+                echo -e "${RED}Error: GitHub CLI (gh) is required but not installed${NC}"
+                return 1
+            fi
+            
+            echo -e "${PURPLE}Fetching issues from GitHub...${NC}"
+            if [[ "$format" == "json" ]]; then
+                issues_json=$(gh issue list --state "$state" --json number,title,body,state,author,assignees,labels,createdAt,updatedAt,url --jq '.')
+            else
+                issues_json=$(gh issue list --state "$state" --limit 50)
+            fi
+            ;;
+    esac
+    
+    # Display results
+    if [[ "$format" == "json" ]]; then
+        echo "$issues_json" | jq '.'
+    else
+        echo "$issues_json"
+    fi
+    
+    echo -e "\n${GREEN}Issues fetched successfully${NC}"
+}
+
+# Function to save issues to files
+save-issues() {
+    local state="open"
+    local format="markdown"
+    local output_dir=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --state)
+                state="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits save-issues [OPTIONS]${NC}"
+                echo -e "${BLUE}Save issues from the current repository to files${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
+                echo -e "  --format FORMAT  Output format: markdown, json, plain (default: markdown)"
+                echo -e "  -h, --help       Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Output:${NC}"
+                echo -e "  Issues are saved to: ./repo-name-issues/"
+                echo -e "  Format: repo-name-issues/ISSUE_NUMBER-title.md"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits save-issues                     # Save open issues as markdown"
+                echo -e "  gits save-issues --state all         # Save all issues"
+                echo -e "  gits save-issues --format json       # Save issues in JSON format"
+                echo -e "  gits save-issues --state closed      # Save closed issues"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits save-issues --help' for usage information."
+                return 1
+                ;;
+            esac
+    done
+    
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo -e "${RED}Error: Not in a git repository${NC}"
+        return 1
+    fi
+    
+    # Get repository info
+    local repo_info=$(get_repo_info)
+    if [[ -z "$repo_info" ]]; then
+        echo -e "${RED}Error: Could not determine repository information${NC}"
+        return 1
+    fi
+    
+    # Create output directory
+    local safe_repo_name=$(echo "$repo_info" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
+    output_dir="./${safe_repo_name}-issues"
+    mkdir -p "$output_dir"
+    
+    echo -e "${GREEN}Saving $state issues for repository: $repo_info${NC}"
+    echo -e "${BLUE}Output directory: $output_dir${NC}"
+    echo -e "${BLUE}Format: $format${NC}"
+    echo -e ""
+    
+    # Get platform info
+    local platform=$(detect_platform)
+    
+    # Fetch issues directly based on platform
+    local issues_json=""
+    
+    case "$platform" in
+        "1"|"gitea")
+            # Extract Gitea server info
+            local remote_url=$(git remote get-url origin 2>/dev/null)
+            local gitea_server="git.ourworld.tf"
+            local owner=$(echo "$repo_info" | cut -d'/' -f1)
+            local repo=$(echo "$repo_info" | cut -d'/' -f2)
+            
+            # Try without auth first
+            local base_url="https://$gitea_server"
+            local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
+            
+            # Add state filter
+            if [[ "$state" != "all" ]]; then
+                api_endpoint="$api_endpoint?state=$state"
+            fi
+            
+            issues_json=$(curl -s "$api_endpoint")
+            ;;
+        "2"|"github"|*)
+            # Use gh CLI for GitHub
+            if command -v gh &> /dev/null; then
+                issues_json=$(gh issue list --state "$state" --json number,title,body,state,author,assignees,labels,createdAt,updatedAt,url --jq '.')
+            else
+                echo -e "${RED}Error: GitHub CLI (gh) is required but not installed${NC}"
+                return 1
+            fi
+            ;;
+    esac
+    
+    # Check if we got valid JSON
+    if ! echo "$issues_json" | jq . &>/dev/null; then
+        echo -e "${RED}Error: Failed to get valid JSON response${NC}"
+        echo -e "${ORANGE}Response: $issues_json${NC}"
+        return 1
+    fi
+    
+    # Process and save issues
+    local saved_count=0
+    
+    while read -r issue; do
+        local issue_number=$(echo "$issue" | jq -r '.number // .id')
+        local title=$(echo "$issue" | jq -r '.title')
+        local body=$(echo "$issue" | jq -r '.body // empty')
+        local state=$(echo "$issue" | jq -r '.state')
+        local author=$(echo "$issue" | jq -r '.author.login // .user.login // "Unknown"')
+        local created_at=$(echo "$issue" | jq -r '.createdAt // .created_at')
+        local url=$(echo "$issue" | jq -r '.url // .html_url')
+        
+        # Create safe filename
+        local safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-+/-/g' | sed 's/^-//; s/-$//')
+        local filename="${issue_number}-${safe_title}.md"
+        
+        case "$format" in
+            markdown)
+                # Create markdown file
+                cat > "$output_dir/$filename" << EOF
+# Issue #$issue_number: $title
+
+**Status:** $state
+**Author:** $author
+**Created:** $created_at
+**URL:** $url
+
+## Description
+
+$body
+EOF
+                ;;
+            json)
+                # Save as individual JSON file
+                echo "$issue" | jq '.' > "$output_dir/${issue_number}.json"
+                filename="${issue_number}.json"
+                ;;
+            plain)
+                # Save as plain text
+                cat > "$output_dir/$filename" << EOF
+Issue #$issue_number: $title
+Status: $state
+Author: $author
+Created: $created_at
+URL: $url
+
+$body
+EOF
+                ;;
+        esac
+        
+        echo -e "${GREEN}Saved: $filename${NC}"
+        ((saved_count++))
+        
+    done < <(echo "$issues_json" | jq -c '.[]')
+    
+    echo -e "\n${GREEN}Successfully saved $saved_count issues to $output_dir${NC}"
+}
+
 help() {
     echo -e "\n${ORANGE}═══════════════════════════════════════════${NC}"
     echo -e "${ORANGE}              GitS - Git Speed              ${NC}"
@@ -2389,6 +2781,19 @@ help() {
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
     echo -e "                  ${BLUE}Note:${NC}    Supports various URL formats including github.com and git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits clone-list\n"
+    
+    echo -e "  ${GREEN}fetch-issues${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Fetch issues from current repository and display in console"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json)"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --state all --format json\n"
+    
+    echo -e "  ${GREEN}save-issues${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Save issues to files in organized directory structure"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain)"
+    echo -e "                  ${BLUE}Output:${NC} ./repo-name-issues/ directory with individual issue files"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown\n"
     
     echo -e "  ${GREEN}status-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Check git status across all repositories in directory tree"
@@ -2517,6 +2922,14 @@ main() {
             ;;
         clone-list)
             clone-list
+            ;;
+        fetch-issues)
+            shift
+            fetch-issues "$@"
+            ;;
+        save-issues)
+            shift
+            save-issues "$@"
             ;;
         status-all)
             shift
