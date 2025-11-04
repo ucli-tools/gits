@@ -601,452 +601,541 @@ status-all() {
     fi
 }
 
+# Enhanced repository cloning with improved architecture and token management
 clone-all() {
-    local platform_choice=""
-    local USERNAME=""
-    local GITEA_SERVER=""
+    local username=""
+    local platform=""
+    local gitea_server="git.ourworld.tf"
+    local use_auth=false
+    local parallel_cloning=true
+    local max_concurrent=5
     
-    # Check if URL/username argument is provided
-    if [ -n "$1" ]; then
-        # Non-interactive mode with URL/username argument
-        local input="$1"
-        
-        # Detect platform and extract username from input
-        if [[ $input == *"github.com"* ]]; then
-            # GitHub URL format
-            platform_choice="2"
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help|-h)
+                echo -e "${GREEN}Usage: gits clone-all [URL|username] [OPTIONS]${NC}"
+                echo -e "${BLUE}Clone all repositories from a user or organization${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --help, -h           Show this help message"
+                echo -e "  --server URL         Gitea server URL (default: git.ourworld.tf)"
+                echo -e "  --no-parallel        Disable parallel cloning"
+                echo -e "  --max-concurrent N   Maximum concurrent clones (default: 5)"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits clone-all myusername"
+                echo -e "  gits clone-all github.com/myusername"
+                echo -e "  gits clone-all git.ourworld.tf/myorg --server git.ourworld.tf"
+                echo -e "  gits clone-all myusername --max-concurrent 10"
+                return 0
+                ;;
+            --server)
+                gitea_server="$2"
+                shift 2
+                ;;
+            --no-parallel)
+                parallel_cloning=false
+                shift
+                ;;
+            --max-concurrent)
+                max_concurrent="$2"
+                shift 2
+                ;;
+            *)
+                username="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    # Detect platform and extract username if not provided
+    local is_org=false
+    if [ -n "$username" ]; then
+        # Parse input to detect platform and extract username
+        if [[ "$username" == *"github.com"* ]]; then
+            platform="github"
             # Extract username from various GitHub URL formats
-            if [[ $input == http* ]]; then
-                USERNAME=$(echo "$input" | sed -E 's|https?://github.com/([^/]+).*|\1|')
+            if [[ "$username" == http* ]]; then
+                username=$(echo "$username" | sed -E 's|https?://github\.com/([^/]+).*|\1|')
             else
-                # Handle github.com/username or just username
-                USERNAME=$(echo "$input" | sed 's|github.com/||' | sed 's|/.*||')
+                username=$(echo "$username" | sed 's|github\.com/||' | sed 's|/.*||')
             fi
-        elif [[ $input == *"git.ourworld.tf"* ]] || [[ $input == *"gitea"* ]]; then
-            # Gitea URL format
-            platform_choice="1"
-            if [[ $input == http* ]]; then
-                GITEA_SERVER=$(echo "$input" | sed -E 's|https?://([^/]+)/.*|\1|')
-                USERNAME=$(echo "$input" | sed -E 's|https?://[^/]+/([^/]+).*|\1|')
+        elif [[ "$username" == *"git.ourworld.tf"* ]] || [[ "$username" == *"gitea"* ]]; then
+            platform="gitea"
+            if [[ "$username" == http* ]]; then
+                gitea_server=$(echo "$username" | sed -E 's|https?://([^/]+)/.*|\1|')
+                username=$(echo "$username" | sed -E 's|https?://[^/]+/([^/]+).*|\1|')
+                # Check if this looks like an organization URL
+                if [[ "$username" == *"/"* ]]; then
+                    is_org=true
+                    gitea_server=$(echo "$username" | cut -d'/' -f1)
+                    username=$(echo "$username" | cut -d'/' -f2)
+                fi
             else
-                # Handle git.ourworld.tf/username format
-                GITEA_SERVER=$(echo "$input" | cut -d'/' -f1)
-                USERNAME=$(echo "$input" | cut -d'/' -f2)
+                gitea_server=$(echo "$username" | cut -d'/' -f1)
+                username=$(echo "$username" | cut -d'/' -f2)
+                # Check if this looks like an organization URL (has slash)
+                if [[ "$username" == *"/"* ]]; then
+                    is_org=true
+                    username=$(echo "$username" | cut -d'/' -f2)
+                fi
             fi
         else
-            # Assume it's just a username for GitHub (most common case)
-            platform_choice="2"
-            USERNAME="$input"
+            # Assume GitHub for username-only input
+            platform="github"
         fi
-        
-        if [ -z "$USERNAME" ]; then
-            echo -e "${RED}Error: Could not extract username from '$input'${NC}"
-            echo -e "${ORANGE}Usage: gits clone-all [URL|username]${NC}"
-            echo -e "${BLUE}Examples:${NC}"
-            echo -e "  gits clone-all myusername"
-            echo -e "  gits clone-all github.com/myusername"
-            echo -e "  gits clone-all https://github.com/myusername"
-            echo -e "  gits clone-all git.ourworld.tf/myorg"
-            return 1
-        fi
-        
-        echo -e "${GREEN}Detected platform: $([ "$platform_choice" = "1" ] && echo "Gitea" || echo "GitHub")${NC}"
-        echo -e "${GREEN}Username: $USERNAME${NC}"
-        [ -n "$GITEA_SERVER" ] && echo -e "${GREEN}Server: $GITEA_SERVER${NC}"
     else
-        # Interactive mode (original behavior)
+        # Interactive mode
         echo -e "${GREEN}Which platform would you like to use?${NC}"
         echo -e "1) Gitea"
         echo -e "2) GitHub"
         read -p "Enter your choice (1/2): " platform_choice
-
-        echo -e "${GREEN}Enter the username:${NC}"
-        read USERNAME
-
-        if [ -z "$USERNAME" ]; then
+        
+        case "$platform_choice" in
+            1) platform="gitea" ;;
+            2) platform="github" ;;
+            *)
+                echo -e "${RED}Invalid choice. Defaulting to GitHub.${NC}"
+                platform="github"
+                ;;
+        esac
+        
+        if [[ "$platform" == "gitea" ]]; then
+            echo -e "${GREEN}Enter Gitea server URL (default: git.ourworld.tf):${NC}"
+            read server_input
+            [ -n "$server_input" ] && gitea_server="$server_input"
+        fi
+        
+        echo -e "${GREEN}Enter username or organization name:${NC}"
+        read username
+        
+        if [ -z "$username" ]; then
             echo -e "${RED}Error: Username cannot be empty.${NC}"
             return 1
         fi
     fi
-
-    # Create a directory for cloning
-    mkdir -p "$USERNAME"
-    cd "$USERNAME" || return 1
-
-    local repos_json=""
-    local successful_clones=0
-    local failed_clones=0
-    local total_repos=0
-
-    # Fetch repositories based on the selected platform
-    case "$platform_choice" in
-        1)
-            # For Gitea, we need to ask for the server URL if not already provided
-            if [ -z "$GITEA_SERVER" ]; then
-                echo -e "${GREEN}Enter Gitea server URL (e.g., git.ourworld.tf):${NC}"
-                read GITEA_SERVER
-                
-                if [ -z "$GITEA_SERVER" ]; then
-                    GITEA_SERVER="git.ourworld.tf"
-                    echo -e "${ORANGE}Using default Gitea server: $GITEA_SERVER${NC}"
-                fi
-            fi
-            
-            echo -e "${GREEN}Cloning all repositories for user: $USERNAME from $GITEA_SERVER${NC}"
-            
-            # Check if curl is available
-            if ! command -v curl &> /dev/null; then
-                echo -e "${RED}Error: curl is required but not installed. Please install curl and try again.${NC}"
-                cd - > /dev/null
-                return 1
-            fi
-            
-            # Ask if user wants to use authentication to access private repositories
-            echo -e "${GREEN}Do you want to access private repositories? (y/n):${NC}"
-            read use_auth
-            
-            local auth_header=""
-            local api_endpoint=""
-            
-            if [[ $use_auth =~ ^[Yy]$ ]]; then
-                echo -e "${GREEN}Choose authentication method:${NC}"
-                echo -e "1) Use existing Gitea login (via tea CLI)"
-                echo -e "2) Provide an API token"
-                read -p "Enter your choice (1/2): " auth_choice
-                
-                case "$auth_choice" in
-                    1)
-                        # Check if tea CLI is available
-                        if ! command -v tea &> /dev/null; then
-                            echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use API token instead.${NC}"
-                            cd - > /dev/null
-                            return 1
-                        fi
-                        
-                        # Check if already logged in
-                        if tea login list | grep -q "$GITEA_SERVER"; then
-                            echo -e "${GREEN}Already logged in to $GITEA_SERVER.${NC}"
-                        else
-                            echo -e "${ORANGE}Not logged in to $GITEA_SERVER. Initiating login...${NC}"
-                            tea login add
-                            
-                            # Check if login was successful
-                            if ! tea login list | grep -q "$GITEA_SERVER"; then
-                                echo -e "${RED}Login failed. Continuing without authentication (only public repos will be accessible).${NC}"
-                            else
-                                echo -e "${GREEN}Login successful.${NC}"
-                            fi
-                        fi
-                        
-                        # Get token from tea config
-                        local tea_token=$(tea config get auth.$GITEA_SERVER.token 2>/dev/null)
-                        if [ -n "$tea_token" ]; then
-                            auth_header="Authorization: token $tea_token"
-                            echo -e "${GREEN}Using token from tea configuration.${NC}"
-                            # Construct base API URL with proper protocol
-                            local base_url
-                            if [[ $GITEA_SERVER != http* ]]; then
-                                base_url="https://$GITEA_SERVER"
-                            else
-                                base_url="$GITEA_SERVER"
-                            fi
-                            
-                            # Ask for API path pattern
-                            echo -e "${GREEN}Select API endpoint pattern:${NC}"
-                            echo -e "1) Standard Gitea API (/api/v1/user/repos)"
-                            echo -e "2) Alternative pattern (/api/v1/orgs/$USERNAME/repos)"
-                            echo -e "3) Custom API endpoint"
-                            read -p "Enter your choice (1/2/3): " api_pattern_choice
-                            
-                            case "$api_pattern_choice" in
-                                1)
-                                    api_endpoint="$base_url/api/v1/user/repos"
-                                    ;;
-                                2)
-                                    api_endpoint="$base_url/api/v1/orgs/$USERNAME/repos"
-                                    ;;
-                                3)
-                                    echo -e "${GREEN}Enter custom API endpoint (without base URL):${NC}"
-                                    echo -e "${ORANGE}Example: /api/v1/users/$USERNAME/repos${NC}"
-                                    read custom_endpoint
-                                    api_endpoint="$base_url$custom_endpoint"
-                                    ;;
-                                *)
-                                    # Default to standard pattern
-                                    api_endpoint="$base_url/api/v1/user/repos"
-                                    ;;
-                            esac
-                        else
-                            echo -e "${ORANGE}Could not retrieve token from tea configuration. Falling back to public repos only.${NC}"
-                            # Construct base API URL with proper protocol
-                            local base_url
-                            if [[ $GITEA_SERVER != http* ]]; then
-                                base_url="https://$GITEA_SERVER"
-                            else
-                                base_url="$GITEA_SERVER"
-                            fi
-                            
-                            # For public repos, use the users endpoint
-                            api_endpoint="$base_url/api/v1/users/$USERNAME/repos"
-                        fi
-                        ;;
-                    2)
-                        echo -e "${GREEN}Enter your Gitea API token:${NC}"
-                        read -s API_TOKEN
-                        echo
-                        
-                        if [ -n "$API_TOKEN" ]; then
-                            auth_header="Authorization: token $API_TOKEN"
-                            # Construct base API URL with proper protocol
-                            local base_url
-                            if [[ $GITEA_SERVER != http* ]]; then
-                                base_url="https://$GITEA_SERVER"
-                            else
-                                base_url="$GITEA_SERVER"
-                            fi
-                            
-                            # Ask for API path pattern
-                            echo -e "${GREEN}Select API endpoint pattern:${NC}"
-                            echo -e "1) Standard Gitea API (/api/v1/user/repos)"
-                            echo -e "2) Alternative pattern (/api/v1/orgs/$USERNAME/repos)"
-                            echo -e "3) Custom API endpoint"
-                            read -p "Enter your choice (1/2/3): " api_pattern_choice
-                            
-                            case "$api_pattern_choice" in
-                                1)
-                                    api_endpoint="$base_url/api/v1/user/repos"
-                                    ;;
-                                2)
-                                    api_endpoint="$base_url/api/v1/orgs/$USERNAME/repos"
-                                    ;;
-                                3)
-                                    echo -e "${GREEN}Enter custom API endpoint (without base URL):${NC}"
-                                    echo -e "${ORANGE}Example: /api/v1/users/$USERNAME/repos${NC}"
-                                    read custom_endpoint
-                                    api_endpoint="$base_url$custom_endpoint"
-                                    ;;
-                                *)
-                                    # Default to standard pattern
-                                    api_endpoint="$base_url/api/v1/user/repos"
-                                    ;;
-                            esac
-                        else
-                            echo -e "${ORANGE}No token provided. Falling back to public repos only.${NC}"
-                            # Construct base API URL with proper protocol
-                            local base_url
-                            if [[ $GITEA_SERVER != http* ]]; then
-                                base_url="https://$GITEA_SERVER"
-                            else
-                                base_url="$GITEA_SERVER"
-                            fi
-                            
-                            # For public repos, use the users endpoint
-                            api_endpoint="$base_url/api/v1/users/$USERNAME/repos"
-                        fi
-                        ;;
-                    *)
-                        echo -e "${ORANGE}Invalid choice. Falling back to public repos only.${NC}"
-                        # Construct base API URL with proper protocol
-                        local base_url
-                        if [[ $GITEA_SERVER != http* ]]; then
-                            base_url="https://$GITEA_SERVER"
-                        else
-                            base_url="$GITEA_SERVER"
-                        fi
-                        
-                        # For public repos, use the users endpoint
-                        api_endpoint="$base_url/api/v1/users/$USERNAME/repos"
-                        ;;
-                esac
-            else
-                # No authentication, use public API
-                # Construct base API URL with proper protocol
-                local base_url
-                if [[ $GITEA_SERVER != http* ]]; then
-                    base_url="https://$GITEA_SERVER"
-                else
-                    base_url="$GITEA_SERVER"
-                fi
-                
-                # Ask for API path pattern for public repos
-                echo -e "${GREEN}Select API endpoint pattern for public repositories:${NC}"
-                echo -e "1) Standard Gitea API (/api/v1/users/$USERNAME/repos)"
-                echo -e "2) Alternative pattern (/api/v1/orgs/$USERNAME/repos)"
-                echo -e "3) Custom API endpoint"
-                read -p "Enter your choice (1/2/3): " api_pattern_choice
-                
-                case "$api_pattern_choice" in
-                    1)
-                        api_endpoint="$base_url/api/v1/users/$USERNAME/repos"
-                        ;;
-                    2)
-                        api_endpoint="$base_url/api/v1/orgs/$USERNAME/repos"
-                        ;;
-                    3)
-                        echo -e "${GREEN}Enter custom API endpoint (without base URL):${NC}"
-                        echo -e "${ORANGE}Example: /api/v1/users/$USERNAME/repos${NC}"
-                        read custom_endpoint
-                        api_endpoint="$base_url$custom_endpoint"
-                        ;;
-                    *)
-                        # Default to standard pattern
-                        api_endpoint="$base_url/api/v1/users/$USERNAME/repos"
-                        ;;
-                esac
-            fi
-            
-            # Use Gitea API to get repositories
-            echo -e "${PURPLE}Fetching repositories from Gitea API...${NC}"
-            echo -e "${BLUE}Using API endpoint: $api_endpoint${NC}"
-            
-            # Fetch repositories using curl with or without authentication
-            if [ -n "$auth_header" ]; then
-                repos_json=$(curl -s -H "$auth_header" "$api_endpoint")
-            else
-                repos_json=$(curl -s "$api_endpoint")
-            fi
-            
-            # Check if we got valid JSON
-            if ! echo "$repos_json" | jq . &>/dev/null; then
-                echo -e "${RED}Error: Failed to get valid JSON response from Gitea API.${NC}"
-                echo -e "${ORANGE}Response: $repos_json${NC}"
-                echo -e "${BLUE}API Endpoint: $api_endpoint${NC}"
-                
-                # Check if the response contains HTML, which might indicate a redirect or error page
-                if echo "$repos_json" | grep -q "<html"; then
-                    echo -e "${RED}Received HTML response instead of JSON. The server might be redirecting or returning an error page.${NC}"
-                    echo -e "${ORANGE}Try using the full URL including 'https://' when entering the server URL.${NC}"
-                fi
-                
-                cd - > /dev/null
-                return 1
-            fi
-            
-            # Check if we got an empty array or error
-            if [ "$(echo "$repos_json" | jq 'length')" -eq 0 ]; then
-                echo -e "${RED}No repositories found for user $USERNAME on $GITEA_SERVER.${NC}"
-                echo -e "${ORANGE}Possible reasons:${NC}"
-                echo -e "  - The username might be incorrect"
-                echo -e "  - The user might not have any public repositories"
-                echo -e "  - You might need authentication to access the repositories"
-                echo -e "  - The API endpoint might be incorrect: $api_endpoint"
-                cd - > /dev/null
-                return 1
-            fi
-            
-            # Debug: Show the raw API response
-            echo -e "${BLUE}API Response:${NC}"
-            echo "$repos_json" | jq '.' | head -n 20
-            
-            # Check the structure of the first repository to determine owner field name
-            local first_repo=$(echo "$repos_json" | jq -c '.[0] // {}')
-            echo -e "${BLUE}First repository structure:${NC}"
-            echo "$first_repo" | jq '.'
-            
-            # Determine the owner field name (Gitea API might use different field names)
-            local owner_field="login"
-            if echo "$first_repo" | jq -e '.owner.username' &>/dev/null; then
-                owner_field="username"
-            fi
-            
-            # Filter repositories by owner if using authenticated endpoint
-            if [[ $api_endpoint == *"/user/repos"* ]]; then
-                echo -e "${BLUE}Filtering repositories owned by $USERNAME (using owner.$owner_field)...${NC}"
-                repos_json=$(echo "$repos_json" | jq "[.[] | select(.owner.$owner_field == \"$USERNAME\")]")
-                
-                # Check if we have any repositories after filtering
-                if [ "$(echo "$repos_json" | jq 'length')" -eq 0 ]; then
-                    echo -e "${RED}No repositories found owned by $USERNAME on $GITEA_SERVER.${NC}"
-                    echo -e "${ORANGE}Try using the exact username as shown in the API response above.${NC}"
-                    cd - > /dev/null
-                    return 1
-                fi
-            fi
-            
-            # Process each repository
-            while read -r repo; do
-                local repo_name=$(echo "$repo" | jq -r '.name')
-                local clone_url=$(echo "$repo" | jq -r '.clone_url')
-                local ssh_url=$(echo "$repo" | jq -r '.ssh_url')
-                
-                # If SSH URL is not available, construct it
-                if [ -z "$ssh_url" ] || [ "$ssh_url" = "null" ]; then
-                    ssh_url="git@$GITEA_SERVER:$USERNAME/$repo_name.git"
-                fi
-                
-                ((total_repos++))
-                
-                # Skip if repository directory already exists
-                if [ -d "$repo_name" ]; then
-                    echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
-                    continue
-                fi
-                
-                echo -e "${PURPLE}Cloning $repo_name...${NC}"
-                
-                # Attempt to clone
-                if git clone "$clone_url" "$repo_name"; then
-                    ((successful_clones++))
-                    echo -e "${GREEN}Completed cloning $repo_name${NC}"
-                    
-                    # Set SSH URL for future operations
-                    (cd "$repo_name" && {
-                        echo -e "${PURPLE}Setting SSH URL: $ssh_url${NC}"
-                        git remote set-url origin "$ssh_url"
-                    })
-                else
-                    ((failed_clones++))
-                    echo -e "${RED}Failed to clone $repo_name${NC}"
-                fi
-            done < <(echo "$repos_json" | jq -c '.[]')
-            ;;
-        2)
-            echo -e "${GREEN}Cloning all repositories for user: $USERNAME from GitHub${NC}"
-            
-            # Fetch repositories using gh for GitHub
-            echo -e "${PURPLE}Fetching repositories from GitHub...${NC}"
-            repos_json=$(gh repo list "$USERNAME" --json name,sshUrl --limit 100)
-            
-            # Use process substitution to avoid subshell variable scope issues
-            while read -r repo; do
-                local repo_name=$(echo "$repo" | jq -r '.name')
-                local repo_url=$(echo "$repo" | jq -r '.sshUrl')
-
-                ((total_repos++))
-
-                # Skip if repository directory already exists
-                if [ -d "$repo_name" ]; then
-                    echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
-                    continue
-                fi
-                
-                echo -e "${PURPLE}Cloning $repo_name...${NC}"
-                
-                # Attempt to clone via SSH
-                if git clone "$repo_url" "$repo_name"; then
-                    ((successful_clones++))
-                    echo -e "${GREEN}Completed cloning $repo_name${NC}"
-                else
-                    ((failed_clones++))
-                    echo -e "${RED}Failed to clone $repo_name${NC}"
-                fi
-            done < <(echo "$repos_json" | jq -c '.[]')
+    
+    # Validate platform
+    case "$platform" in
+        github|gitea)
+            echo -e "${GREEN}Platform: ${platform}${NC}"
+            echo -e "${GREEN}Username: $username${NC}"
+            [[ "$platform" == "gitea" ]] && echo -e "${GREEN}Server: $gitea_server${NC}"
             ;;
         *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
-            cd - > /dev/null
+            echo -e "${RED}Unsupported platform: $platform${NC}"
             return 1
             ;;
     esac
-
-    # Display summary
+    
+    # Validate dependencies
+    case "$platform" in
+        github)
+            if ! command -v gh &> /dev/null; then
+                echo -e "${RED}Error: GitHub CLI (gh) is required but not installed.${NC}"
+                echo -e "${BLUE}Install it from: https://cli.github.com/${NC}"
+                return 1
+            fi
+            ;;
+        gitea)
+            if ! command -v curl &> /dev/null; then
+                echo -e "${RED}Error: curl is required but not installed.${NC}"
+                return 1
+            fi
+            if ! command -v jq &> /dev/null; then
+                echo -e "${RED}Error: jq is required but not installed.${NC}"
+                return 1
+            fi
+            ;;
+    esac
+    
+    # Create directory for cloning
+    mkdir -p "$username"
+    cd "$username" || return 1
+    
+    local repos_json=""
+    local auth_header=""
+    
+    echo -e "\n${BLUE}Fetching repositories...${NC}"
+    
+    # Fetch repositories using platform-specific method
+    case "$platform" in
+        github)
+            # Use GitHub CLI for GitHub repositories
+            repos_json=$(gh repo list "$username" --json name,sshUrl,cloneUrl --limit 100 2>/dev/null)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Failed to fetch repositories from GitHub.${NC}"
+                echo -e "${ORANGE}Make sure you're authenticated with 'gh auth login'${NC}"
+                cd - > /dev/null
+                return 1
+            fi
+            ;;
+        gitea)
+            # Handle Gitea authentication using existing token system
+            echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
+            echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
+            read -r use_auth_response
+            
+            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                # Use existing token caching system from save-issues
+                local cached_token=$(get_cached_gitea_token "$gitea_server")
+                
+                if [ -n "$cached_token" ]; then
+                    echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
+                fi
+                
+                # If no cached token or user declined, prompt for authentication
+                if [ -z "$auth_header" ]; then
+                    echo -e "${GREEN}Choose authentication method:${NC}"
+                    echo -e "1) Use existing Gitea login (via tea CLI)"
+                    echo -e "2) Provide an API token (will be cached for future use)"
+                    read -p "Enter your choice (1/2): " auth_choice
+                    
+                    case "$auth_choice" in
+                        1)
+                            if ! command -v tea &> /dev/null; then
+                                echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
+                                cd - > /dev/null
+                                return 1
+                            fi
+                            
+                            local gitea_token=$(get_tea_token "$gitea_server")
+                            if [ -n "$gitea_token" ]; then
+                                auth_header="Authorization: token $gitea_token"
+                                save_gitea_token "$gitea_server" "$gitea_token"
+                                echo -e "${GREEN}Retrieved and cached token from tea CLI${NC}"
+                            else
+                                echo -e "${RED}Could not retrieve token from tea configuration.${NC}"
+                                cd - > /dev/null
+                                return 1
+                            fi
+                            ;;
+                        2)
+                            echo -e "${GREEN}Enter your Gitea API token:${NC}"
+                            read -s API_TOKEN
+                            echo
+                            
+                            if [ -n "$API_TOKEN" ]; then
+                                auth_header="Authorization: token $API_TOKEN"
+                                save_gitea_token "$gitea_server" "$API_TOKEN"
+                                echo -e "${GREEN}Token saved for future use${NC}"
+                            else
+                                echo -e "${RED}No token provided.${NC}"
+                                cd - > /dev/null
+                                return 1
+                            fi
+                            ;;
+                        *)
+                            echo -e "${RED}Invalid choice.${NC}"
+                            cd - > /dev/null
+                            return 1
+                            ;;
+                    esac
+                fi
+            fi
+            
+            # Construct API endpoint
+            local base_url
+            if [[ "$gitea_server" != http* ]]; then
+                base_url="https://$gitea_server"
+            else
+                base_url="$gitea_server"
+            fi
+            
+            # Smart endpoint selection based on whether we want organization or user repos
+            local primary_endpoint=""
+            local secondary_endpoints=()
+            local endpoint_names=()
+            
+            if [[ "$is_org" == true ]]; then
+                # For organizations, prefer org endpoint first
+                echo -e "${BLUE}Detected organization request for '$username'${NC}"
+                primary_endpoint="$base_url/api/v1/orgs/$username/repos"
+                endpoint_names+=("organization")
+                secondary_endpoints+=("$base_url/api/v1/users/$username/repos")
+                endpoint_names+=("user")
+            else
+                # For users, prefer user endpoint first
+                primary_endpoint="$base_url/api/v1/users/$username/repos"
+                endpoint_names+=("user")
+                if [ -n "$auth_header" ]; then
+                    secondary_endpoints+=("$base_url/api/v1/user/repos")
+                    endpoint_names+=("authenticated_user")
+                fi
+            fi
+            
+            local found_repos=false
+            local best_response=""
+            local best_endpoint=""
+            local best_count=0
+            
+            # Try primary endpoint first
+            echo -e "${BLUE}Trying primary endpoint: ${endpoint_names[0]}${NC}"
+            local response=""
+            if [ -n "$auth_header" ]; then
+                response=$(curl -s -H "$auth_header" "$primary_endpoint")
+            else
+                response=$(curl -s "$primary_endpoint")
+            fi
+            
+            # Validate primary response
+            if echo "$response" | jq . &>/dev/null; then
+                local repo_count=$(echo "$response" | jq 'length')
+                if [ "$repo_count" -gt 0 ]; then
+                    echo -e "${GREEN}Found $repo_count repositories via ${endpoint_names[0]} endpoint${NC}"
+                    best_response="$response"
+                    best_endpoint="${endpoint_names[0]}"
+                    best_count="$repo_count"
+                    found_repos=true
+                else
+                    echo -e "${ORANGE}No repositories found via ${endpoint_names[0]} endpoint${NC}"
+                fi
+            else
+                echo -e "${ORANGE}Invalid response from ${endpoint_names[0]} endpoint${NC}"
+            fi
+            
+            # Try secondary endpoints only if primary didn't work well
+            if [ "$found_repos" = false ] || [ "$best_count" -gt 50 ]; then
+                for i in "${!secondary_endpoints[@]}"; do
+                    local api_endpoint="${secondary_endpoints[i]}"
+                    local endpoint_name="${endpoint_names[i+1]}"
+                    
+                    echo -e "${BLUE}Trying secondary endpoint: $endpoint_name${NC}"
+                    
+                    local response=""
+                    if [ -n "$auth_header" ]; then
+                        response=$(curl -s -H "$auth_header" "$api_endpoint")
+                    else
+                        response=$(curl -s "$api_endpoint")
+                    fi
+                    
+                    # Validate response
+                    if echo "$response" | jq . &>/dev/null; then
+                        local repo_count=$(echo "$response" | jq 'length')
+                        if [ "$repo_count" -gt 0 ]; then
+                            echo -e "${GREEN}Found $repo_count repositories via $endpoint_name endpoint${NC}"
+                            
+                            # Use this endpoint if it has reasonable results or primary failed
+                            if [ "$found_repos" = false ] || [ "$repo_count" -lt "$best_count" ]; then
+                                best_response="$response"
+                                best_endpoint="$endpoint_name"
+                                best_count="$repo_count"
+                                found_repos=true
+                            fi
+                        else
+                            echo -e "${ORANGE}No repositories found via $endpoint_name endpoint${NC}"
+                        fi
+                    else
+                        echo -e "${ORANGE}Invalid response from $endpoint_name endpoint${NC}"
+                    fi
+                done
+            fi
+            
+            if [ "$found_repos" = false ]; then
+                echo -e "${RED}No repositories found for '$username' on $gitea_server.${NC}"
+                echo -e "${ORANGE}This might be because:${NC}"
+                echo -e "  - The user/organization doesn't exist"
+                echo -e "  - All repositories are private and no authentication was provided"
+                echo -e "  - The server is not accessible"
+                cd - > /dev/null
+                return 1
+            fi
+            
+            repos_json="$best_response"
+            
+            echo -e "${GREEN}Using repositories from $best_endpoint endpoint ($best_count repos)${NC}"
+            
+            # Check final repository count
+            local total_count=$(echo "$repos_json" | jq 'length')
+            if [ "$total_count" -eq 0 ]; then
+                echo -e "${RED}No repositories found.${NC}"
+                cd - > /dev/null
+                return 1
+            fi
+            ;;
+    esac
+    
+    # Process repositories
+    echo -e "\n${BLUE}Processing repositories...${NC}"
+    
+    local repos_list=()
+    local clone_urls=()
+    local ssh_urls=()
+    local repo_names=()
+    
+    # Parse repositories
+    while read -r repo; do
+        local repo_name=""
+        local clone_url=""
+        local ssh_url=""
+        
+        # Handle platform-specific field names
+        case "$platform" in
+            github)
+                repo_name=$(echo "$repo" | jq -r '.name')
+                clone_url=$(echo "$repo" | jq -r '.cloneUrl')
+                ssh_url=$(echo "$repo" | jq -r '.sshUrl')
+                ;;
+            gitea)
+                repo_name=$(echo "$repo" | jq -r '.name')
+                clone_url=$(echo "$repo" | jq -r '.clone_url // .http_url')
+                ssh_url=$(echo "$repo" | jq -r '.ssh_url // .git_url')
+                ;;
+        esac
+        
+        # Skip if we couldn't get a valid repository name
+        if [[ -z "$repo_name" ]] || [[ "$repo_name" == "null" ]]; then
+            echo -e "${ORANGE}Skipping repository with invalid name: $repo${NC}"
+            continue
+        fi
+        
+        # Skip if directory already exists
+        if [ -d "$repo_name" ]; then
+            echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
+            continue
+        fi
+        
+        # Store repository info
+        repo_names+=("$repo_name")
+        clone_urls+=("$clone_url")
+        
+        # Handle SSH URL construction if missing
+        if [[ -z "$ssh_url" ]] || [[ "$ssh_url" == "null" ]]; then
+            case "$platform" in
+                github)
+                    ssh_url="git@github.com:$username/$repo_name.git"
+                    ;;
+                gitea)
+                    ssh_url="git@$gitea_server:$username/$repo_name.git"
+                    ;;
+            esac
+        fi
+        ssh_urls+=("$ssh_url")
+        
+    done < <(echo "$repos_json" | jq -c '.[]')
+    
+    local total_repos=${#repo_names[@]}
+    local successful_clones=0
+    local failed_clones=0
+    
+    if [ "$total_repos" -eq 0 ]; then
+        echo -e "${ORANGE}No repositories to clone.${NC}"
+        cd - > /dev/null
+        return 0
+    fi
+    
+    echo -e "${GREEN}Found $total_repos repositories to clone${NC}"
+    
+    # Clone repositories
+    if [[ "$parallel_cloning" == true ]] && [ "$total_repos" -gt 1 ]; then
+        echo -e "${BLUE}Using parallel cloning (max concurrent: $max_concurrent)${NC}"
+        # Set global variables for helper functions (bash function limitation)
+        CLONE_REPO_NAMES=("${repo_names[@]}")
+        CLONE_CLONE_URLS=("${clone_urls[@]}")
+        CLONE_SSH_URLS=("${ssh_urls[@]}")
+        CLONE_MAX_CONCURRENT="$max_concurrent"
+        clone_repositories_parallel
+    else
+        echo -e "${BLUE}Using sequential cloning${NC}"
+        # Set global variables for helper functions (bash function limitation)
+        CLONE_REPO_NAMES=("${repo_names[@]}")
+        CLONE_CLONE_URLS=("${clone_urls[@]}")
+        CLONE_SSH_URLS=("${ssh_urls[@]}")
+        clone_repositories_sequential
+    fi
+    
+    # Summary
     echo -e "\n${BLUE}Cloning Summary:${NC}"
     echo -e "Total Repositories: ${total_repos}"
     echo -e "${GREEN}Successfully Cloned: ${successful_clones}${NC}"
     echo -e "${RED}Failed to Clone: ${failed_clones}${NC}"
     
-    # Return to original directory
     cd - > /dev/null
+}
+
+# Helper function for sequential repository cloning
+clone_repositories_sequential() {
+    for i in "${!CLONE_REPO_NAMES[@]}"; do
+        local repo_name="${CLONE_REPO_NAMES[i]}"
+        local clone_url="${CLONE_CLONE_URLS[i]}"
+        local ssh_url="${CLONE_SSH_URLS[i]}"
+        
+        echo -e "${PURPLE}Cloning ${repo_name}...${NC}"
+        
+        if git clone "$clone_url" "$repo_name" 2>/dev/null; then
+            ((successful_clones++))
+            echo -e "${GREEN}✅ Cloned ${repo_name}${NC}"
+            
+            # Set SSH URL for future operations
+            (cd "$repo_name" && git remote set-url origin "$ssh_url" 2>/dev/null)
+        else
+            ((failed_clones++))
+            echo -e "${RED}❌ Failed to clone ${repo_name}${NC}"
+        fi
+    done
+    
+    # Clean up global variables
+    unset CLONE_REPO_NAMES CLONE_CLONE_URLS CLONE_SSH_URLS
+}
+
+# Helper function for parallel repository cloning
+clone_repositories_parallel() {
+    local max_concurrent="${CLONE_MAX_CONCURRENT:-5}"
+    local current_concurrent=0
+    local pids=()
+    
+    for i in "${!CLONE_REPO_NAMES[@]}"; do
+        local repo_name="${CLONE_REPO_NAMES[i]}"
+        local clone_url="${CLONE_CLONE_URLS[i]}"
+        local ssh_url="${CLONE_SSH_URLS[i]}"
+        
+        # Wait if we've reached the maximum concurrent processes
+        while [ "$current_concurrent" -ge "$max_concurrent" ]; do
+            for pid_index in "${!pids[@]}"; do
+                if ! kill -0 "${pids[$pid_index]}" 2>/dev/null; then
+                    unset "pids[$pid_index]"
+                    ((current_concurrent--))
+                fi
+            done
+            pids=("${pids[@]}")  # Reindex array
+            sleep 0.1
+        done
+        
+        # Start clone in background
+        {
+            echo -e "${PURPLE}Cloning ${repo_name}...${NC}"
+            
+            if git clone "$clone_url" "$repo_name" 2>/dev/null; then
+                ((successful_clones++))
+                echo -e "${GREEN}✅ Cloned ${repo_name}${NC}"
+                
+                # Set SSH URL for future operations
+                (cd "$repo_name" && git remote set-url origin "$ssh_url" 2>/dev/null)
+            else
+                ((failed_clones++))
+                echo -e "${RED}❌ Failed to clone ${repo_name}${NC}"
+            fi
+        } &
+        
+        pids+=("$!")
+        ((current_concurrent++))
+    done
+    
+    # Wait for all background processes to complete
+    for pid in "${pids[@]}"; do
+        wait "$pid"
+    done
+    
+    # Clean up global variables
+    unset CLONE_REPO_NAMES CLONE_CLONE_URLS CLONE_SSH_URLS CLONE_MAX_CONCURRENT
 }
 
 # Function to delete a branch
