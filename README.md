@@ -13,6 +13,7 @@
   - [Branch Management](#branch-management)
   - [Basic Git Operations](#basic-git-operations)
   - [Pull Request Management](#pull-request-management)
+  - [Issue Management](#issue-management)
   - [Commit Management](#commit-management)
   - [Installation Management](#installation-management)
   - [Platform-Specific Features](#platform-specific-features)
@@ -34,6 +35,7 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Easy Commit**: Quickly commit changes with a custom message.
 - **Pull Request Management**: Create, close, and merge PRs for both GitHub and Gitea.
 - **Platform Authentication**: Login and logout functionality for both GitHub and Gitea.
+- **Issue Management**: Fetch and save issues from both public and private repositories with flexible authentication options.
 - **Branch Management**: Create, delete, and manage branches easily.
 - **Repository Initialization**: Initialize a new Git repository and push it to GitHub.
 - **Commit Management**: Revert to previous commits and undo reverts.
@@ -48,6 +50,7 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Pull Request Workflow**: Complete PR lifecycle management including creation, closing, and merging
 - **Merge Commit Control**: Custom merge commit messages and titles
 - **Branch Cleanup**: Automatic branch cleanup options after PR merges
+- **Private Repository Support**: Full support for private repositories with dual authentication methods (tea CLI or API token)
 
 ## Prerequisites
 
@@ -143,6 +146,78 @@ After installation, you can use GitS with the following commands:
   - Platform-specific merge handling
 
 
+### Issue Management
+- `gits fetch-issues [OPTIONS]` - Fetch and display issues from the current repository
+  - Supports both public and private repositories
+  - **Authentication Methods:**
+    - For private Gitea repositories: tea CLI login or API token
+    - For GitHub: Uses gh CLI authentication (automatic)
+  - **Options:**
+    - `--state STATE` - Filter by state: open, closed, all (default: open)
+    - `--format FORMAT` - Output format: display, json (default: display)
+  - **Examples:**
+    ```bash
+    # Fetch open issues from current repository
+    gits fetch-issues
+    
+    # Fetch all issues (open and closed)
+    gits fetch-issues --state all
+    
+    # Fetch issues in JSON format
+    gits fetch-issues --format json
+    
+    # Access private repository issues (with authentication prompt)
+    gits fetch-issues --state all
+    # When prompted:
+    # - Choose "1" to use tea CLI login
+    # - Choose "2" to provide API token manually
+    ```
+
+- `gits save-issues [OPTIONS]` - Save issues to files in organized directory
+  - Supports both public and private repositories
+  - **Authentication Methods:**
+    - For private Gitea repositories: tea CLI login or API token
+    - For GitHub: Uses gh CLI authentication (automatic)
+  - **Options:**
+    - `--state STATE` - Filter by state: open, closed, all (default: open)
+    - `--format FORMAT` - File format: markdown, json, plain (default: markdown)
+  - **Output Structure:**
+    - Creates directory: `./repo-name-issues/`
+    - File naming: `ISSUE_NUMBER-title.md` (or `.json` for JSON format)
+    - Automatically syncs: removes stale files for resolved issues
+  - **Examples:**
+    ```bash
+    # Save open issues as markdown files
+    gits save-issues
+    
+    # Save all issues in JSON format
+    gits save-issues --state all --format json
+    
+    # Save closed issues
+    gits save-issues --state closed
+    
+    # Access private repository issues (with authentication prompt)
+    gits save-issues
+    # When prompted:
+    # - Choose "1" to use tea CLI login
+    # - Choose "2" to provide API token manually
+    ```
+
+**Authentication for Private Repositories:**
+
+For Gitea private repositories, you'll be prompted to authenticate:
+1. **Option 1: Use tea CLI (recommended)**
+   - Requires tea CLI to be installed and configured
+   - Run `gits login` first to set up authentication
+   - Automatically retrieves your stored token
+   
+2. **Option 2: Manual API Token**
+   - Provide your Gitea API token directly
+   - Token can be generated from Gitea settings
+   - Useful if tea CLI is not available
+
+For GitHub repositories, authentication is automatic via `gh` CLI (if logged in via `gh auth login`).
+
 ### Commit Management
 - `gits revert <number>` - Revert to previous commits
   - Specify number of commits to revert
@@ -162,12 +237,20 @@ After installation, you can use GitS with the following commands:
 - Default branch: development
 - Custom merge commit messages
 - Manual branch cleanup options
+- **API Token Generation:**
+  1. Navigate to your Gitea instance (e.g., https://git.ourworld.tf)
+  2. Go to Settings → Applications → Generate New Token
+  3. Give it a descriptive name (e.g., "GitS CLI")
+  4. Select scopes: `read:repository`, `read:issue` (minimum required)
+  5. Copy the generated token (you won't see it again)
+  6. Use this token when prompted by `gits fetch-issues` or `gits save-issues`
 
 #### GitHub
 - Default branch: main
 - Automatic branch deletion after PR merge
 - GitHub CLI integration
 - Enhanced PR descriptions
+- **Authentication:** Automatically handled via `gh auth login`
 
 For detailed usage information and examples, run `gits help`.
 
