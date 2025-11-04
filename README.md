@@ -10,6 +10,7 @@
   - [Authentication](#authentication)
   - [Repository Management](#repository-management)
   - [Repository Setup](#repository-setup)
+  - [Batch Repository Operations](#batch-repository-operations)
   - [Branch Management](#branch-management)
   - [Basic Git Operations](#basic-git-operations)
   - [Pull Request Management](#pull-request-management)
@@ -41,6 +42,9 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Repository Initialization**: Initialize a new Git repository and push it to GitHub.
 - **Commit Management**: Revert to previous commits and undo reverts.
 - **Repository Cloning**: Easily clone repositories and switch to their directory.
+- **Batch Repository Operations**: Clone, push, and check status across multiple repositories simultaneously.
+- **Parallel Cloning**: Clone multiple repositories concurrently for better performance.
+- **Organization Repository Support**: Smart detection and cloning of organization repositories.
 - **Easy Installation**: Simple install and uninstall process.
 - **User-Friendly**: Colorized output and helpful error messages.
 - **Repository Management**: Create and delete repositories on both GitHub and Gitea
@@ -52,6 +56,8 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Merge Commit Control**: Custom merge commit messages and titles
 - **Branch Cleanup**: Automatic branch cleanup options after PR merges
 - **Private Repository Support**: Full support for private repositories with dual authentication methods (tea CLI or API token)
+- **AI-Powered Commits**: Integration with AI commit message generation using `pal` command
+- **Cross-Repository Workflows**: Manage changes across multiple repositories with intelligent batch operations
 
 ## Prerequisites
 
@@ -97,17 +103,98 @@ After installation, you can use GitS with the following commands:
     - Repository name
     - Confirmation
 
-  ### Repository Setup
-  - `gits init` - Initialize a new Git repository
-    - Platform selection (GitHub/Gitea)
-    - Default branch configuration
-    - Initial commit setup
-    - Remote repository linking
-  - `gits clone <repo>` - Clone a repository
-    - Supports full URLs or GitHub shorthand (org/repo)
-    - Automatic directory switching
+### Repository Setup
+- `gits init` - Initialize a new Git repository
+  - Platform selection (GitHub/Gitea)
+  - Default branch configuration
+  - Initial commit setup
+  - Remote repository linking
+- `gits clone <repo>` - Clone a repository
+  - Supports full URLs or GitHub shorthand (org/repo)
+  - Automatic directory switching
 
+### Batch Repository Operations
+- `gits clone-all [URL|username] [OPTIONS]` - Clone all repositories from a user or organization
+  - **Smart Organization Detection**: Automatically detects organization vs user from URL format
+  - **Multiple Platform Support**: GitHub and Gitea with intelligent endpoint selection
+  - **Parallel Cloning**: Configurable concurrent repository cloning (default: 5 concurrent)
+  - **Enhanced Authentication**: Supports cached tokens and multiple authentication methods
+  - **Cross-platform Field Mapping**: Handles GitHub (`cloneUrl`, `sshUrl`) and Gitea (`clone_url`, `ssh_url`) field differences
+  - **Options:**
+    - `--server URL` - Specify Gitea server URL (default: git.ourworld.tf)
+    - `--no-parallel` - Disable parallel cloning for sequential processing
+    - `--max-concurrent N` - Set maximum concurrent clones (default: 5)
+    - `--help, -h` - Show comprehensive help information
+  - **Examples:**
+    ```bash
+    # Clone repositories from a GitHub user
+    gits clone-all myusername
     
+    # Clone repositories from a Gitea organization with custom server
+    gits clone-all git.ourworld.tf/myorg --server git.ourworld.tf
+    
+    # Clone with parallel processing (faster for many repositories)
+    gits clone-all myusername --max-concurrent 10
+    
+    # Sequential cloning (useful for debugging)
+    gits clone-all myusername --no-parallel
+    ```
+  - **Authentication Features:**
+    - Automatically detects and uses cached authentication tokens
+    - Supports private and internal repository access
+    - Clear prompts for tea CLI vs API token authentication
+
+- `gits push-all [OPTIONS]` - Interactively add, commit, and push changes across all dirty repositories
+  - **Smart Repository Detection**: Automatically finds all repositories with changes in current directory tree
+  - **Multiple Operation Modes**:
+    - Interactive mode: Prompts for each repository
+    - Batch mode: Uses same commit message for all repositories
+    - Dry run mode: Preview actions without executing
+  - **AI-Powered Commit Messages**: Integration with `pal` command for intelligent commit messages
+  - **Safety Features**: Skip confirmation prompts, individual repository control
+  - **Options:**
+    - `--dry-run, -n` - Show what would be done without executing
+    - `--batch, -b` - Use same commit message for all repos
+    - `--message, -m` - Default commit message (use with --batch)
+    - `--yes, -y` - Skip confirmation prompts
+    - `-p` - Use pal /commit for AI-generated commit messages (interactive)
+    - `-py` - Use pal /commit -y for AI-generated commit messages (auto-commit)
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Interactive mode - prompts for each repository
+    gits push-all
+    
+    # Batch mode with custom message
+    gits push-all --batch -m "Update documentation"
+    
+    # Preview what would be done
+    gits push-all --dry-run
+    
+    # Use AI-generated commit messages
+    gits push-all -py
+    ```
+
+- `gits status-all [OPTIONS]` - Check git status across all repositories in directory tree
+  - **Comprehensive Status Reporting**: Shows status for all repositories with intelligent filtering
+  - **Multiple Display Modes**: Compact, detailed, and filtered views
+  - **Performance Optimized**: Efficient directory traversal and status checking
+  - **Options:**
+    - `--all` - Show all repositories with status (default: only repos needing attention)
+    - `--compact` - Show compact summary format
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Show only repositories needing attention
+    gits status-all
+    
+    # Show all repositories with detailed status
+    gits status-all --all
+    
+    # Compact summary of all repositories
+    gits status-all --all --compact
+    ```
+
 ### Branch Management
 - `gits new [branch-name]` - Create and switch to a new branch
   - Optional branch name argument
