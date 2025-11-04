@@ -8,6 +8,96 @@ RED='\033[0;31m'
 ORANGE='\033[38;5;208m'
 NC='\033[0m' # No Color
 
+# Token cache helper functions
+
+# Get gits config directory
+get_gits_config_dir() {
+    echo "${XDG_CONFIG_HOME:-$HOME/.config}/gits"
+}
+
+# Save token to cache
+save_gitea_token() {
+    local server="$1"
+    local token="$2"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    mkdir -p "$config_dir"
+    
+    # Remove old token for this server
+    if [ -f "$tokens_file" ]; then
+        grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+        mv "$tokens_file.tmp" "$tokens_file" 2>/dev/null
+    fi
+    
+    # Add new token
+    echo "$server=$token" >> "$tokens_file"
+    chmod 600 "$tokens_file"
+    echo -e "${GREEN}Token cached in $(get_gits_config_dir)/tokens.conf${NC}"
+}
+
+# Get cached token
+get_cached_gitea_token() {
+    local server="$1"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    if [ -f "$tokens_file" ]; then
+        grep "^$server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
+    fi
+}
+
+# Clear cached token
+clear_cached_gitea_token() {
+    local server="$1"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    if [ -f "$tokens_file" ]; then
+        grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+        mv "$tokens_file.tmp" "$tokens_file" 2>/dev/null
+        echo -e "${GREEN}Cached token for $server cleared${NC}"
+    else
+        echo -e "${ORANGE}No cached tokens found${NC}"
+    fi
+}
+
+# Improved tea token retrieval with multiple fallback methods
+get_tea_token() {
+    local server="$1"
+    local token=""
+    
+    # Method 1: Try tea config command
+    token=$(tea config get "auth.$server.token" 2>/dev/null)
+    if [ -n "$token" ] && [ "$token" != "null" ]; then
+        echo "$token"
+        return 0
+    fi
+    
+    # Method 2: Parse tea config YAML file directly
+    local tea_config="$HOME/.config/tea/config.yml"
+    if [ -f "$tea_config" ]; then
+        # Look for the server section and extract token
+        token=$(awk "/  $server:/{flag=1; next} /  [a-z]/{flag=0} flag && /token:/{print \$2; exit}" "$tea_config" | tr -d '"')
+        if [ -n "$token" ]; then
+            echo "$token"
+            return 0
+        fi
+    fi
+    
+    # Method 3: Try alternative config location
+    tea_config="$HOME/.tea/config.yml"
+    if [ -f "$tea_config" ]; then
+        token=$(awk "/  $server:/{flag=1; next} /  [a-z]/{flag=0} flag && /token:/{print \$2; exit}" "$tea_config" | tr -d '"')
+        if [ -n "$token" ]; then
+            echo "$token"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
 # Function to detect platform from git remote
 detect_platform() {
     local remote_url=$(git remote get-url origin 2>/dev/null)
@@ -2423,61 +2513,75 @@ fetch-issues() {
                 return 1
             fi
             
-            # Check for authentication
-            echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
-            read -r use_auth
-            
+            # Check for authentication with token caching
             local auth_header=""
-            if [[ $use_auth =~ ^[Yy]$ ]]; then
-                echo -e "${GREEN}Choose authentication method:${NC}"
-                echo -e "1) Use existing Gitea login (via tea CLI)"
-                echo -e "2) Provide an API token"
-                read -p "Enter your choice (1/2): " auth_choice
+            local gitea_token=""
+            
+            # Check for cached token first
+            local cached_token=$(get_cached_gitea_token "$gitea_server")
+            
+            if [ -n "$cached_token" ]; then
+                echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
+                echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                read -r use_cached
                 
-                case "$auth_choice" in
-                    1)
-                        # Check if tea CLI is available
-                        if ! command -v tea &> /dev/null; then
-                            echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
-                            return 1
-                        fi
-                        
-                        # Check if already logged in
-                        if tea login list | grep -q "$gitea_server"; then
-                            echo -e "${GREEN}Already logged in to $gitea_server.${NC}"
-                        else
-                            echo -e "${ORANGE}Not logged in to $gitea_server.${NC}"
-                            echo -e "${ORANGE}Please run 'gits login' first or use option 2 (API token).${NC}"
-                            return 1
-                        fi
-                        
-                        # Get token from tea config
-                        gitea_token=$(tea config get auth.$gitea_server.token 2>/dev/null)
-                        if [ -n "$gitea_token" ]; then
-                            auth_header="Authorization: token $gitea_token"
-                            echo -e "${GREEN}Using token from tea configuration.${NC}"
-                        else
-                            echo -e "${RED}Could not retrieve token from tea configuration.${NC}"
-                            echo -e "${ORANGE}Please try option 2 (API token) or run 'gits login' first.${NC}"
-                            return 1
-                        fi
-                        ;;
-                    2)
-                        echo -e "${GREEN}Enter your Gitea API token:${NC}"
-                        read -s API_TOKEN
-                        echo
-                        
-                        if [ -n "$API_TOKEN" ]; then
-                            auth_header="Authorization: token $API_TOKEN"
-                            echo -e "${GREEN}Using provided API token.${NC}"
-                        else
-                            echo -e "${RED}No token provided. Falling back to public access only.${NC}"
-                        fi
-                        ;;
-                    *)
-                        echo -e "${RED}Invalid choice. Falling back to public access only.${NC}"
-                        ;;
-                esac
+                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                    auth_header="Authorization: token $cached_token"
+                    echo -e "${BLUE}Using cached token${NC}"
+                fi
+            fi
+            
+            # If no cached token or user declined, prompt for authentication
+            if [ -z "$auth_header" ]; then
+                echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
+                read -r use_auth
+                
+                if [[ $use_auth =~ ^[Yy]$ ]]; then
+                    echo -e "${GREEN}Choose authentication method:${NC}"
+                    echo -e "1) Use existing Gitea login (via tea CLI)"
+                    echo -e "2) Provide an API token (will be cached for future use)"
+                    read -p "Enter your choice (1/2): " auth_choice
+                    
+                    case "$auth_choice" in
+                        1)
+                            # Check if tea CLI is available
+                            if ! command -v tea &> /dev/null; then
+                                echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
+                                return 1
+                            fi
+                            
+                            # Try to get token from tea using improved method
+                            gitea_token=$(get_tea_token "$gitea_server")
+                            if [ -n "$gitea_token" ]; then
+                                auth_header="Authorization: token $gitea_token"
+                                # Cache the tea token for future use
+                                save_gitea_token "$gitea_server" "$gitea_token"
+                                echo -e "${GREEN}Retrieved and cached token from tea CLI${NC}"
+                            else
+                                echo -e "${RED}Could not retrieve token from tea configuration.${NC}"
+                                echo -e "${ORANGE}Please try option 2 (API token) or run 'gits login' first.${NC}"
+                                return 1
+                            fi
+                            ;;
+                        2)
+                            echo -e "${GREEN}Enter your Gitea API token:${NC}"
+                            read -s API_TOKEN
+                            echo
+                            
+                            if [ -n "$API_TOKEN" ]; then
+                                auth_header="Authorization: token $API_TOKEN"
+                                # Cache the token
+                                save_gitea_token "$gitea_server" "$API_TOKEN"
+                                echo -e "${GREEN}Token saved for future use${NC}"
+                            else
+                                echo -e "${RED}No token provided. Falling back to public access only.${NC}"
+                            fi
+                            ;;
+                        *)
+                            echo -e "${RED}Invalid choice. Falling back to public access only.${NC}"
+                            ;;
+                    esac
+                fi
             fi
             
             echo -e "${PURPLE}Fetching issues from Gitea...${NC}"
@@ -2617,61 +2721,75 @@ save-issues() {
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
             
-            # Check for authentication
-            echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
-            read -r use_auth
-            
+            # Check for authentication with token caching
             local auth_header=""
-            if [[ $use_auth =~ ^[Yy]$ ]]; then
-                echo -e "${GREEN}Choose authentication method:${NC}"
-                echo -e "1) Use existing Gitea login (via tea CLI)"
-                echo -e "2) Provide an API token"
-                read -p "Enter your choice (1/2): " auth_choice
+            local gitea_token=""
+            
+            # Check for cached token first
+            local cached_token=$(get_cached_gitea_token "$gitea_server")
+            
+            if [ -n "$cached_token" ]; then
+                echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
+                echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                read -r use_cached
                 
-                case "$auth_choice" in
-                    1)
-                        # Check if tea CLI is available
-                        if ! command -v tea &> /dev/null; then
-                            echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
-                            return 1
-                        fi
-                        
-                        # Check if already logged in
-                        if tea login list | grep -q "$gitea_server"; then
-                            echo -e "${GREEN}Already logged in to $gitea_server.${NC}"
-                        else
-                            echo -e "${ORANGE}Not logged in to $gitea_server.${NC}"
-                            echo -e "${ORANGE}Please run 'gits login' first or use option 2 (API token).${NC}"
-                            return 1
-                        fi
-                        
-                        # Get token from tea config
-                        local gitea_token=$(tea config get auth.$gitea_server.token 2>/dev/null)
-                        if [ -n "$gitea_token" ]; then
-                            auth_header="Authorization: token $gitea_token"
-                            echo -e "${GREEN}Using token from tea configuration.${NC}"
-                        else
-                            echo -e "${RED}Could not retrieve token from tea configuration.${NC}"
-                            echo -e "${ORANGE}Please try option 2 (API token) or run 'gits login' first.${NC}"
-                            return 1
-                        fi
-                        ;;
-                    2)
-                        echo -e "${GREEN}Enter your Gitea API token:${NC}"
-                        read -s API_TOKEN
-                        echo
-                        
-                        if [ -n "$API_TOKEN" ]; then
-                            auth_header="Authorization: token $API_TOKEN"
-                            echo -e "${GREEN}Using provided API token.${NC}"
-                        else
-                            echo -e "${RED}No token provided. Falling back to public access only.${NC}"
-                        fi
-                        ;;
-                    *)
-                        echo -e "${RED}Invalid choice. Falling back to public access only.${NC}"
-                        ;;
-                esac
+                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                    auth_header="Authorization: token $cached_token"
+                    echo -e "${BLUE}Using cached token${NC}"
+                fi
+            fi
+            
+            # If no cached token or user declined, prompt for authentication
+            if [ -z "$auth_header" ]; then
+                echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
+                read -r use_auth
+                
+                if [[ $use_auth =~ ^[Yy]$ ]]; then
+                    echo -e "${GREEN}Choose authentication method:${NC}"
+                    echo -e "1) Use existing Gitea login (via tea CLI)"
+                    echo -e "2) Provide an API token (will be cached for future use)"
+                    read -p "Enter your choice (1/2): " auth_choice
+                    
+                    case "$auth_choice" in
+                        1)
+                            # Check if tea CLI is available
+                            if ! command -v tea &> /dev/null; then
+                                echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
+                                return 1
+                            fi
+                            
+                            # Try to get token from tea using improved method
+                            gitea_token=$(get_tea_token "$gitea_server")
+                            if [ -n "$gitea_token" ]; then
+                                auth_header="Authorization: token $gitea_token"
+                                # Cache the tea token for future use
+                                save_gitea_token "$gitea_server" "$gitea_token"
+                                echo -e "${GREEN}Retrieved and cached token from tea CLI${NC}"
+                            else
+                                echo -e "${RED}Could not retrieve token from tea configuration.${NC}"
+                                echo -e "${ORANGE}Please try option 2 (API token) or run 'gits login' first.${NC}"
+                                return 1
+                            fi
+                            ;;
+                        2)
+                            echo -e "${GREEN}Enter your Gitea API token:${NC}"
+                            read -s API_TOKEN
+                            echo
+                            
+                            if [ -n "$API_TOKEN" ]; then
+                                auth_header="Authorization: token $API_TOKEN"
+                                # Cache the token
+                                save_gitea_token "$gitea_server" "$API_TOKEN"
+                                echo -e "${GREEN}Token saved for future use${NC}"
+                            else
+                                echo -e "${RED}No token provided. Falling back to public access only.${NC}"
+                            fi
+                            ;;
+                        *)
+                            echo -e "${RED}Invalid choice. Falling back to public access only.${NC}"
+                            ;;
+                    esac
+                fi
             fi
             
             local base_url="https://$gitea_server"
@@ -2958,6 +3076,14 @@ help() {
     echo -e "                  ${BLUE}Actions:${NC} Logout from selected platform"
     echo -e "                  ${BLUE}Example:${NC} gits logout\n"
     
+    echo -e "  ${GREEN}token <command> [server]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Manage cached API tokens"
+    echo -e "                  ${BLUE}Commands:${NC} clear, show, list"
+    echo -e "                  ${BLUE}Note:${NC}    Tokens cached in ~/.config/gits/tokens.conf"
+    echo -e "                  ${BLUE}Example:${NC} gits token list"
+    echo -e "                  ${BLUE}Example:${NC} gits token clear git.ourworld.tf"
+    echo -e "                  ${BLUE}Example:${NC} gits token show\n"
+    
     echo -e "  ${GREEN}install${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Install GitS globally"
     echo -e "                  ${BLUE}Example:${NC} gits install\n"
@@ -3006,6 +3132,10 @@ main() {
             ;;
         logout)
             logout
+            ;;
+        token)
+            shift
+            token "$@"
             ;;
         repo)
             shift

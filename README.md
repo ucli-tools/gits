@@ -15,6 +15,7 @@
   - [Pull Request Management](#pull-request-management)
   - [Issue Management](#issue-management)
   - [Commit Management](#commit-management)
+  - [Token Management](#token-management)
   - [Installation Management](#installation-management)
   - [Platform-Specific Features](#platform-specific-features)
     - [Gitea](#gitea)
@@ -209,12 +210,19 @@ For Gitea private repositories, you'll be prompted to authenticate:
 1. **Option 1: Use tea CLI (recommended)**
    - Requires tea CLI to be installed and configured
    - Run `gits login` first to set up authentication
-   - Automatically retrieves your stored token
+   - Automatically retrieves and caches your token for future use
    
 2. **Option 2: Manual API Token**
    - Provide your Gitea API token directly
+   - Token is automatically cached in `~/.config/gits/tokens.conf`
+   - Won't need to re-enter on subsequent commands
    - Token can be generated from Gitea settings
-   - Useful if tea CLI is not available
+
+**Token Caching:**
+- Tokens are securely stored in `~/.config/gits/tokens.conf` (permissions: 600)
+- Cached tokens are automatically used on subsequent commands
+- You'll be prompted to confirm using cached token
+- Manage tokens with `gits token` command (see Token Management section below)
 
 For GitHub repositories, authentication is automatic via `gh` CLI (if logged in via `gh auth login`).
 
@@ -224,6 +232,17 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
   - Stages changes without committing
 - `gits unrevert` - Cancel the last revert operation
   - Useful for accidental reverts
+
+### Token Management
+- `gits token list` - List all cached authentication tokens
+  - Shows masked tokens for security
+  - Displays storage location
+- `gits token show [server]` - Show cached token for specific server
+  - Default server: git.ourworld.tf
+  - Token is masked for security
+- `gits token clear [server]` - Clear cached token
+  - Removes stored token for server
+  - Will prompt for authentication on next command
 
 ### Installation Management
 - `bash gits.sh install` - Install GitS system-wide (`cd` in the Gits CLI repo)
@@ -244,6 +263,11 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
   4. Select scopes: `read:repository`, `read:issue` (minimum required)
   5. Copy the generated token (you won't see it again)
   6. Use this token when prompted by `gits fetch-issues` or `gits save-issues`
+  7. Token will be automatically cached for future use
+- **Token Management:**
+  - View cached tokens: `gits token list`
+  - Clear cached token: `gits token clear git.ourworld.tf`
+  - Tokens stored in: `~/.config/gits/tokens.conf` (secure, 600 permissions)
 
 #### GitHub
 - Default branch: main
