@@ -37,6 +37,127 @@ save_gitea_token() {
 }
 
 # Get cached token
+# Get cached token (unified for all platforms)
+get_cached_token() {
+    local platform="$1"
+    local server="$2"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    if [ -f "$tokens_file" ]; then
+        case "$platform" in
+            "github")
+                grep "^github.com=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
+                ;;
+            "gitea")
+                grep "^$server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
+                ;;
+        esac
+    fi
+}
+
+# Get cached Gitea token (legacy function)
+get_cached_gitea_token() {
+    get_cached_token "gitea" "$1"
+}
+
+# Save token to cache
+save_token() {
+    local platform="$1"
+    local server="$2"
+    local token="$3"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    # Ensure config directory exists
+    mkdir -p "$config_dir"
+    
+    # Create temp file and process tokens
+    if [ -f "$tokens_file" ]; then
+        # Remove existing token for this platform/server
+        case "$platform" in
+            "github")
+                grep -v "^github.com=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+                ;;
+            "gitea")
+                grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+                ;;
+        esac
+        mv "$tokens_file.tmp" "$tokens_file"
+    fi
+    
+    # Add new token
+    case "$platform" in
+        "github")
+            echo "github.com=$token" >> "$tokens_file"
+            ;;
+        "gitea")
+            echo "$server=$token" >> "$tokens_file"
+            ;;
+    esac
+    
+    chmod 600 "$tokens_file" 2>/dev/null
+}
+
+# Clear cached token
+clear_cached_token() {
+    local platform="$1"
+    local server="$2"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    if [ -f "$tokens_file" ]; then
+        case "$platform" in
+            "github")
+                grep -v "^github.com=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+                ;;
+            "gitea")
+                grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+                ;;
+        esac
+        mv "$tokens_file.tmp" "$tokens_file"
+        echo -e "${GREEN}Cached token for $platform cleared${NC}"
+    else
+        echo -e "${ORANGE}No cached tokens found${NC}"
+    fi
+}
+
+# Clear cached token (legacy function)
+clear_cached_gitea_token() {
+    clear_cached_token "gitea" "$1"
+}
+
+# Get GitHub token from gh CLI
+get_github_token() {
+    local token=""
+    
+    # Method 1: Try gh auth status and token commands
+    token=$(gh auth status --show-token 2>/dev/null | grep -oE 'ghp_[a-zA-Z0-9]{36}' | head -1)
+    if [ -n "$token" ]; then
+        echo "$token"
+        return 0
+    fi
+    
+    # Method 2: Check gh config
+    token=$(gh config get -h github.com oauth_token 2>/dev/null)
+    if [ -n "$token" ]; then
+        echo "$token"
+        return 0
+    fi
+    
+    # Method 3: Parse gh configuration files
+    local gh_config="$HOME/.config/gh/config.yml"
+    if [ -f "$gh_config" ]; then
+        token=$(grep -A 1 "github.com" "$gh_config" | grep "oauth_token:" | awk '{print $2}' | head -1)
+        if [ -n "$token" ]; then
+            echo "$token"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
 get_cached_gitea_token() {
     local server="$1"
     local config_dir=$(get_gits_config_dir)
@@ -1296,13 +1417,105 @@ clone-all() {
     # Fetch repositories using platform-specific method
     case "$platform" in
         github)
-            # Use GitHub CLI for GitHub repositories
-            repos_json=$(gh repo list "$username" --json name,sshUrl,cloneUrl --limit 100 2>/dev/null)
-            if [ $? -ne 0 ]; then
-                echo -e "${RED}Failed to fetch repositories from GitHub.${NC}"
-                echo -e "${ORANGE}Make sure you're authenticated with 'gh auth login'${NC}"
-                cd - > /dev/null
-                return 1
+            # GitHub repository access with proper private repo support
+            echo -e "${GREEN}Do you want to access private repositories? (y/n):${NC}"
+            echo -e "${BLUE}This allows cloning private repositories you have access to${NC}"
+            read -r use_auth_response
+            
+            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                # Check for cached token first
+                local cached_token=$(get_cached_token "github" "github.com")
+                
+                if [ -n "$cached_token" ]; then
+                    echo -e "${GREEN}Found cached authentication token for GitHub${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
+                fi
+                
+                # If no cached token or user declined, get from gh CLI
+                if [ -z "$auth_header" ]; then
+                    if ! command -v gh &> /dev/null; then
+                        echo -e "${RED}Error: GitHub CLI (gh) is required for private repository access.${NC}"
+                        echo -e "${BLUE}Install it from: https://cli.github.com/${NC}"
+                        cd - > /dev/null
+                        return 1
+                    fi
+                    
+                    echo -e "${GREEN}Checking GitHub CLI authentication...${NC}"
+                    local github_token=$(get_github_token)
+                    
+                    if [ -n "$github_token" ]; then
+                        auth_header="Authorization: token $github_token"
+                        save_token "github" "github.com" "$github_token"
+                        echo -e "${GREEN}Retrieved and cached token from GitHub CLI${NC}"
+                    else
+                        echo -e "${RED}Could not retrieve GitHub token.${NC}"
+                        echo -e "${ORANGE}Please run 'gh auth login' and try again.${NC}"
+                        cd - > /dev/null
+                        return 1
+                    fi
+                fi
+                
+                # Use GitHub CLI for private repository access (better permission handling)
+                echo -e "${BLUE}Fetching repositories using GitHub CLI...${NC}"
+                
+                # Test token scopes by trying to access repos
+                local test_result=$(gh repo list "$username" --json=id,name,clone_url,private,visibility --limit 1 2>&1)
+                local test_exit_code=$?
+                
+                if [ $test_exit_code -ne 0 ]; then
+                    echo -e "${RED}Failed to access repositories.${NC}"
+                    
+                    # Check for scope-related errors
+                    if echo "$test_result" | grep -qi "scope\|permission\|unauthorized\|forbidden"; then
+                        echo -e "${YELLOW}Token scopes may be insufficient.${NC}"
+                        echo -e "${BLUE}Required scopes for private/organization repositories:${NC}"
+                        echo -e "  - 'repo' for private repositories"
+                        echo -e "  - 'read:org' for organization repositories"
+                        echo -e "${BLUE}To fix:${NC}"
+                        echo -e "  1. Go to: https://github.com/settings/tokens"
+                        echo -e "  2. Edit your token and add missing scopes"
+                        echo -e "  3. Or run: gh auth login --with-token"
+                        echo -e "${ORANGE}Falling back to public repository access only.${NC}"
+                        
+                        # Fallback to public access
+                        repos_json=$(curl -s "https://api.github.com/users/$username/repos?per_page=100&type=all" 2>/dev/null)
+                        if ! echo "$repos_json" | jq . &>/dev/null; then
+                            echo -e "${RED}Failed to fetch public repositories.${NC}"
+                            cd - > /dev/null
+                            return 1
+                        fi
+                    elif echo "$test_result" | grep -qi "not found\|404"; then
+                        echo -e "${RED}User or organization '$username' not found.${NC}"
+                        echo -e "${ORANGE}Please check the username/organization name.${NC}"
+                        cd - > /dev/null
+                        return 1
+                    else
+                        echo -e "${RED}Error details: $test_result${NC}"
+                        cd - > /dev/null
+                        return 1
+                    fi
+                else
+                    # Successfully accessed repos with GitHub CLI
+                    repos_json=$(gh repo list "$username" --json=id,name,sshUrl,url,isPrivate --limit 100 2>/dev/null)
+                fi
+            else
+                # Public access only - use GitHub API
+                echo -e "${BLUE}Fetching public repositories using GitHub API...${NC}"
+                repos_json=$(curl -s "https://api.github.com/users/$username/repos?per_page=100&type=all" 2>/dev/null)
+                
+                # Validate response
+                if ! echo "$repos_json" | jq . &>/dev/null; then
+                    echo -e "${RED}Failed to fetch repositories from GitHub.${NC}"
+                    echo -e "${ORANGE}Please check your connection.${NC}"
+                    cd - > /dev/null
+                    return 1
+                fi
             fi
             ;;
         gitea)
@@ -1497,6 +1710,16 @@ clone-all() {
             ;;
     esac
     
+    # Debug: Show repository count
+    local total_count=$(echo "$repos_json" | jq 'length' 2>/dev/null)
+    echo -e "${BLUE}Found $total_count repositories to process${NC}"
+    
+    if [ "$total_count" -eq 0 ]; then
+        echo -e "${YELLOW}No repositories found to clone.${NC}"
+        cd - >/dev/null 2>&1
+        return 0
+    fi
+    
     # Process repositories
     echo -e "\n${BLUE}Processing repositories...${NC}"
     
@@ -1504,6 +1727,9 @@ clone-all() {
     local clone_urls=()
     local ssh_urls=()
     local repo_names=()
+    local processed_count=0
+    local skipped_existing=0
+    local invalid_count=0
     
     # Parse repositories
     while read -r repo; do
@@ -1515,7 +1741,7 @@ clone-all() {
         case "$platform" in
             github)
                 repo_name=$(echo "$repo" | jq -r '.name')
-                clone_url=$(echo "$repo" | jq -r '.cloneUrl')
+                clone_url=$(echo "$repo" | jq -r '.url + ".git"')
                 ssh_url=$(echo "$repo" | jq -r '.sshUrl')
                 ;;
             gitea)
@@ -1527,14 +1753,25 @@ clone-all() {
         
         # Skip if we couldn't get a valid repository name
         if [[ -z "$repo_name" ]] || [[ "$repo_name" == "null" ]]; then
-            echo -e "${ORANGE}Skipping repository with invalid name: $repo${NC}"
+            echo -e "${ORANGE}Skipping repository with invalid name${NC}"
+            ((invalid_count++))
             continue
         fi
         
         # Skip if directory already exists
         if [ -d "$repo_name" ]; then
-            echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
+            if [[ "$verbose" == true ]]; then
+                echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
+            fi
+            ((skipped_existing++))
             continue
+        fi
+        
+        # Debug output for verbose mode
+        if [[ "$verbose" == true ]]; then
+            echo -e "${BLUE}Processing: $repo_name${NC}"
+            echo -e "${BLUE}  Clone URL: $clone_url${NC}"
+            echo -e "${BLUE}  SSH URL: $ssh_url${NC}"
         fi
         
         # Store repository info
@@ -1553,8 +1790,29 @@ clone-all() {
             esac
         fi
         ssh_urls+=("$ssh_url")
+        ((processed_count++))
         
     done < <(echo "$repos_json" | jq -c '.[]')
+    
+    # Summary statistics
+    if [[ "$verbose" == true ]]; then
+        echo -e "\n${BLUE}Repository Processing Summary:${NC}"
+        echo -e "${GREEN}  Successfully parsed: $processed_count${NC}"
+        echo -e "${YELLOW}  Skipped (existing): $skipped_existing${NC}"
+        echo -e "${RED}  Invalid (skipped): $invalid_count${NC}"
+    fi
+    
+    if [ $processed_count -eq 0 ]; then
+        echo -e "\n${YELLOW}No new repositories to clone.${NC}"
+        echo -e "${BLUE}This could be because:${NC}"
+        echo -e "  - All repositories already exist locally"
+        echo -e "  - Authentication permissions prevent access to repositories"
+        echo -e "  - No valid repositories found"
+        cd - >/dev/null 2>&1
+        return 0
+    fi
+    
+    echo -e "\n${GREEN}Ready to clone $processed_count repositories${NC}"
     
     local total_repos=${#repo_names[@]}
     local successful_clones=0
