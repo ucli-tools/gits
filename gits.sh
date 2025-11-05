@@ -601,6 +601,540 @@ status-all() {
     fi
 }
 
+
+# Function to fetch updates from all repositories
+fetch-all() {
+    local parallel=true
+    local max_concurrent=5
+    local verbose=false
+    local fetch_tags=true
+    local quiet=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --no-parallel)
+                parallel=false
+                shift
+                ;;
+            --max-concurrent)
+                max_concurrent="$2"
+                shift 2
+                ;;
+            --no-tags)
+                fetch_tags=false
+                shift
+                ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            --verbose|-v)
+                verbose=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits fetch-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Fetch updates from all repositories in current directory tree${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --no-parallel      Disable parallel fetching"
+                echo -e "  --max-concurrent N Maximum concurrent fetches (default: 5)"
+                echo -e "  --no-tags          Don't fetch tags"
+                echo -e "  -q, --quiet        Suppress output (except errors)"
+                echo -e "  -v, --verbose      Show detailed output"
+                echo -e "  -h, --help         Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits fetch-all                    # Parallel fetch with tags"
+                echo -e "  gits fetch-all --no-parallel      # Sequential fetching"
+                echo -e "  gits fetch-all --max-concurrent 10 # Higher concurrency"
+                echo -e "  gits fetch-all --no-tags          # Skip tag fetching"
+                echo -e "  gits fetch-all --verbose          # Detailed output"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits fetch-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Fetching updates from all repositories...${NC}"
+    echo -e ""
+    
+    # Collect all repository directories
+    local repos=()
+    while IFS= read -r -d '' gitdir; do
+        repos+=("$(dirname "$gitdir")")
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+        return 0
+    fi
+    
+    local total_repos=${#repos[@]}
+    # Make counters global for helper functions
+    success_count=0
+    failed_count=0
+    
+    if [[ "$quiet" == true ]]; then
+        echo -e "${BLUE}Processing $total_repos repositories...${NC}"
+    fi
+    
+    if [[ "$parallel" == true ]]; then
+        fetch_repositories_parallel "${repos[@]}"
+    else
+        fetch_repositories_sequential "${repos[@]}"
+    fi
+    
+    # Summary
+    echo -e ""
+    echo -e "${PURPLE}Fetch Summary:${NC}"
+    echo -e "  Total repositories: $total_repos"
+    if [[ "$success_count" -gt 0 ]]; then
+        echo -e "  ${GREEN}Successfully fetched: $success_count${NC}"
+    fi
+    if [[ "$failed_count" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed_count${NC}"
+    fi
+}
+
+# Helper function for sequential repository fetching
+fetch_repositories_sequential() {
+    local repos=("$@")
+    local fetch_cmd="git fetch"
+    
+    if [[ "$fetch_tags" == false ]]; then
+        fetch_cmd="$fetch_cmd --no-tags"
+    fi
+    
+    for repo in "${repos[@]}"; do
+        if [[ "$verbose" == true ]]; then
+            echo -e "${BLUE}📁 $repo${NC}"
+        elif [[ "$quiet" == false ]]; then
+            echo -e "${PURPLE}Fetching $repo...${NC}"
+        fi
+        
+        cd "$repo" || continue
+        
+        if $fetch_cmd 2>/dev/null; then
+            ((success_count++))
+            if [[ "$verbose" == true ]]; then
+                echo -e "  ${GREEN}✅ Success${NC}"
+            elif [[ "$quiet" == false ]]; then
+                echo -e "  ${GREEN}✅ Success${NC}"
+            fi
+        else
+            ((failed_count++))
+            if [[ "$verbose" == true ]]; then
+                echo -e "  ${RED}❌ Failed${NC}"
+            elif [[ "$quiet" == false ]]; then
+                echo -e "  ${RED}❌ Failed${NC}"
+            fi
+        fi
+        
+        cd - >/dev/null 2>&1
+    done
+}
+
+# Helper function for parallel repository fetching
+fetch_repositories_parallel() {
+    local repos=("$@")
+    local max_concurrent_local="${max_concurrent:-5}"
+    local current_concurrent=0
+    local pids=()
+    local fetch_cmd="git fetch"
+    
+    if [[ "$fetch_tags" == false ]]; then
+        fetch_cmd="$fetch_cmd --no-tags"
+    fi
+    
+    for repo in "${repos[@]}"; do
+        # Wait if we've reached the maximum concurrent processes
+        while [[ $current_concurrent -ge $max_concurrent_local ]]; do
+            # Check if any process has finished
+            for i in "${!pids[@]}"; do
+                if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                    wait "${pids[i]}"
+                    local exit_code=$?
+                    if [[ $exit_code -eq 0 ]]; then
+                        ((success_count++))
+                    else
+                        ((failed_count++))
+                    fi
+                    unset pids[i]
+                    ((current_concurrent--))
+                fi
+            done
+            if [[ $current_concurrent -ge $max_concurrent_local ]]; then
+                sleep 0.1
+            fi
+        done
+        
+        # Start fetch in background
+        {
+            cd "$repo" 2>/dev/null || exit 1
+            
+            local verbose_prefix=""
+            if [[ "$verbose" == true ]]; then
+                verbose_prefix="${BLUE}📁 $repo${NC} - "
+            elif [[ "$quiet" == false ]]; then
+                verbose_prefix="Fetching $repo... "
+            fi
+            
+            if $fetch_cmd 2>/dev/null; then
+                if [[ "$verbose" == true ]]; then
+                    echo -e "${verbose_prefix}${GREEN}✅ Success${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "${verbose_prefix}${GREEN}✅${NC}"
+                fi
+                exit 0
+            else
+                if [[ "$verbose" == true ]]; then
+                    echo -e "${verbose_prefix}${RED}❌ Failed${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "${verbose_prefix}${RED}❌${NC}"
+                fi
+                exit 1
+            fi
+        } &
+        
+        pids+=("$!")
+        ((current_concurrent++))
+    done
+    
+    # Wait for all remaining background processes
+    for pid in "${pids[@]}"; do
+        wait "$pid"
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
+            ((success_count++))
+        else
+            ((failed_count++))
+        fi
+    done
+}
+
+# Function to pull updates from all repositories
+pull-all() {
+    local parallel=true
+    local max_concurrent=5
+    local verbose=false
+    local auto_merge=false
+    local abort_on_conflict=false
+    local strategy="merge"  # merge, rebase, or ff-only
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --no-parallel)
+                parallel=false
+                shift
+                ;;
+            --max-concurrent)
+                max_concurrent="$2"
+                shift 2
+                ;;
+            --auto-merge)
+                auto_merge=true
+                shift
+                ;;
+            --abort-on-conflict)
+                abort_on_conflict=true
+                shift
+                ;;
+            --strategy)
+                strategy="$2"
+                if [[ "$strategy" != "merge" && "$strategy" != "rebase" && "$strategy" != "ff-only" ]]; then
+                    echo -e "${RED}Error: Invalid strategy '$strategy'. Must be 'merge', 'rebase', or 'ff-only'${NC}"
+                    return 1
+                fi
+                shift 2
+                ;;
+            --verbose|-v)
+                verbose=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits pull-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Pull updates from all repositories in current directory tree${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --no-parallel         Disable parallel pulling"
+                echo -e "  --max-concurrent N    Maximum concurrent pulls (default: 5)"
+                echo -e "  --auto-merge          Automatically merge without conflicts (use carefully)"
+                echo -e "  --abort-on-conflict   Abort on first merge conflict"
+                echo -e "  --strategy STRATEGY   Merge strategy: merge, rebase, or ff-only (default: merge)"
+                echo -e "  -v, --verbose         Show detailed output"
+                echo -e "  -h, --help            Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits pull-all                    # Standard pull with merge strategy"
+                echo -e "  gits pull-all --strategy rebase  # Use rebase strategy"
+                echo -e "  gits pull-all --auto-merge       # Auto-merge when possible"
+                echo -e "  gits pull-all --verbose          # Detailed output"
+                echo -e "  gits pull-all --abort-on-conflict # Stop on first conflict"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits pull-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Pulling updates from all repositories...${NC}"
+    echo -e ""
+    
+    # Collect all repository directories
+    local repos=()
+    while IFS= read -r -d '' gitdir; do
+        repos+=("$(dirname "$gitdir")")
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+        return 0
+    fi
+    
+    local total_repos=${#repos[@]}
+    # Make counters global for helper functions
+    success_count=0
+    conflict_count=0
+    failed_count=0
+    
+    if [[ "$parallel" == true ]]; then
+        pull_repositories_parallel "${repos[@]}"
+    else
+        pull_repositories_sequential "${repos[@]}"
+    fi
+    
+    # Summary
+    echo -e ""
+    echo -e "${PURPLE}Pull Summary:${NC}"
+    echo -e "  Total repositories: $total_repos"
+    if [[ "$success_count" -gt 0 ]]; then
+        echo -e "  ${GREEN}Successfully pulled: $success_count${NC}"
+    fi
+    if [[ "$conflict_count" -gt 0 ]]; then
+        echo -e "  ${YELLOW}Merge conflicts: $conflict_count${NC}"
+    fi
+    if [[ "$failed_count" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed_count${NC}"
+    fi
+}
+
+# Helper function for sequential repository pulling
+pull_repositories_sequential() {
+    local repos=("$@")
+    
+    for repo in "${repos[@]}"; do
+        if [[ "$verbose" == true ]]; then
+            echo -e "${BLUE}📁 $repo${NC}"
+        elif [[ "$quiet" == false ]]; then
+            echo -e "${PURPLE}Pulling $repo...${NC}"
+        fi
+        
+        cd "$repo" || continue
+        
+        local result=$(perform_git_pull)
+        
+        case "$result" in
+            "success")
+                ((success_count++))
+                if [[ "$verbose" == true ]]; then
+                    echo -e "  ${GREEN}✅ Success${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "  ${GREEN}✅ Success${NC}"
+                fi
+                ;;
+            "conflict")
+                ((conflict_count++))
+                if [[ "$verbose" == true ]]; then
+                    echo -e "  ${YELLOW}⚠️  Merge conflict${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "  ${YELLOW}⚠️  Merge conflict${NC}"
+                fi
+                
+                if [[ "$abort_on_conflict" == true ]]; then
+                    echo -e "${RED}Aborting due to --abort-on-conflict flag.${NC}"
+                    git merge --abort 2>/dev/null
+                    return 1
+                fi
+                ;;
+            "no-updates")
+                if [[ "$verbose" == true ]]; then
+                    echo -e "  ${BLUE}ℹ️  No updates${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "  ${BLUE}ℹ️  No updates${NC}"
+                fi
+                ((success_count++))
+                ;;
+            "failed")
+                ((failed_count++))
+                if [[ "$verbose" == true ]]; then
+                    echo -e "  ${RED}❌ Failed${NC}"
+                elif [[ "$quiet" == false ]]; then
+                    echo -e "  ${RED}❌ Failed${NC}"
+                fi
+                ;;
+        esac
+        
+        cd - >/dev/null 2>&1
+    done
+}
+
+# Helper function for parallel repository pulling
+pull_repositories_parallel() {
+    local repos=("$@")
+    local max_concurrent_local="${max_concurrent:-5}"
+    local current_concurrent=0
+    local pids=()
+    
+    for repo in "${repos[@]}"; do
+        # Wait if we've reached the maximum concurrent processes
+        while [[ $current_concurrent -ge $max_concurrent_local ]]; do
+            # Check if any process has finished
+            for i in "${!pids[@]}"; do
+                if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                    wait "${pids[i]}"
+                    local exit_code=$?
+                    case $exit_code in
+                        0) ((success_count++)) ;;
+                        1) ((conflict_count++)) ;;
+                        2) ((failed_count++)) ;;
+                    esac
+                    unset pids[i]
+                    ((current_concurrent--))
+                fi
+            done
+            if [[ $current_concurrent -ge $max_concurrent_local ]]; then
+                sleep 0.1
+            fi
+        done
+        
+        # Start pull in background
+        {
+            cd "$repo" 2>/dev/null || exit 3
+            
+            local verbose_prefix=""
+            if [[ "$verbose" == true ]]; then
+                verbose_prefix="${BLUE}📁 $repo${NC} - "
+            elif [[ "$quiet" == false ]]; then
+                verbose_prefix="Pulling $repo... "
+            fi
+            
+            local result=$(perform_git_pull)
+            
+            case "$result" in
+                "success")
+                    if [[ "$verbose" == true ]]; then
+                        echo -e "${verbose_prefix}${GREEN}✅ Success${NC}"
+                    elif [[ "$quiet" == false ]]; then
+                        echo -e "${verbose_prefix}${GREEN}✅${NC}"
+                    fi
+                    exit 0
+                    ;;
+                "conflict")
+                    if [[ "$verbose" == true ]]; then
+                        echo -e "${verbose_prefix}${YELLOW}⚠️  Merge conflict${NC}"
+                    elif [[ "$quiet" == false ]]; then
+                        echo -e "${verbose_prefix}${YELLOW}⚠️  Merge conflict${NC}"
+                    fi
+                    exit 1
+                    ;;
+                "no-updates")
+                    if [[ "$verbose" == true ]]; then
+                        echo -e "${verbose_prefix}${BLUE}ℹ️  No updates${NC}"
+                    elif [[ "$quiet" == false ]]; then
+                        echo -e "${verbose_prefix}${BLUE}ℹ️  No updates${NC}"
+                    fi
+                    exit 0
+                    ;;
+                "failed")
+                    if [[ "$verbose" == true ]]; then
+                        echo -e "${verbose_prefix}${RED}❌ Failed${NC}"
+                    elif [[ "$quiet" == false ]]; then
+                        echo -e "${verbose_prefix}${RED}❌${NC}"
+                    fi
+                    exit 2
+                    ;;
+            esac
+        } &
+        
+        pids+=("$!")
+        ((current_concurrent++))
+    done
+    
+    # Wait for all remaining background processes
+    for pid in "${pids[@]}"; do
+        wait "$pid"
+        local exit_code=$?
+        case $exit_code in
+            0) ((success_count++)) ;;
+            1) ((conflict_count++)) ;;
+            2) ((failed_count++)) ;;
+        esac
+    done
+}
+
+# Helper function to perform git pull with strategy and conflict handling
+perform_git_pull() {
+    local pull_cmd="git pull"
+    
+    # Set strategy based on option
+    case "$strategy" in
+        "rebase")
+            pull_cmd="$pull_cmd --rebase"
+            ;;
+        "ff-only")
+            pull_cmd="$pull_cmd --ff-only"
+            ;;
+        "merge"|*)
+            pull_cmd="$pull_cmd --no-rebase"
+            ;;
+    esac
+    
+    # Try to pull
+    if $pull_cmd 2>/tmp/pull_error_$$; then
+        # Check if there were any updates
+        if [[ -s /tmp/pull_error_$$ ]]; then
+            echo "success"
+        else
+            echo "no-updates"
+        fi
+    else
+        local error_output=$(cat /tmp/pull_error_$$ 2>/dev/null)
+        rm -f /tmp/pull_error_$$
+        
+        # Check for merge conflict
+        if echo "$error_output" | grep -q "CONFLICT"; then
+            if [[ "$auto_merge" == true ]]; then
+                # Try to auto-resolve simple conflicts
+                if git diff --name-only --diff-filter=U | head -1 | xargs -r git checkout --theirs 2>/dev/null; then
+                    if git add -A && git commit --no-edit 2>/dev/null; then
+                        echo "success"
+                    else
+                        echo "conflict"
+                    fi
+                else
+                    echo "conflict"
+                fi
+            else
+                echo "conflict"
+            fi
+        else
+            echo "failed"
+        fi
+    fi
+    
+    rm -f /tmp/pull_error_$$
+}
+
 # Enhanced repository cloning with improved architecture and token management
 clone-all() {
     local username=""
@@ -3153,6 +3687,22 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits status-all"
     echo -e "                  ${BLUE}Example:${NC} gits status-all --all --compact\n"
     
+    echo -e "  ${GREEN}fetch-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Fetch updates from all repositories in directory tree"
+    echo -e "                  ${BLUE}Options:${NC} --no-parallel (disable parallel), --max-concurrent N (default: 5)"
+    echo -e "                  ${BLUE}Options:${NC} --no-tags (skip tags), --quiet (suppress output)"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-all"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-all --no-parallel"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-all --max-concurrent 10\n"
+    
+    echo -e "  ${GREEN}pull-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Pull updates from all repositories with conflict detection"
+    echo -e "                  ${BLUE}Options:${NC} --strategy (merge/rebase/ff-only), --auto-merge (attempt auto-resolve)"
+    echo -e "                  ${BLUE}Options:${NC} --abort-on-conflict (stop on conflicts), --no-parallel (disable parallel)"
+    echo -e "                  ${BLUE}Example:${NC} gits pull-all"
+    echo -e "                  ${BLUE}Example:${NC} gits pull-all --strategy rebase"
+    echo -e "                  ${BLUE}Example:${NC} gits pull-all --auto-merge --verbose\n"
+    
     echo -e "  ${GREEN}push-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactively add, commit, and push changes across all dirty repositories"
     echo -e "                  ${BLUE}Options:${NC} --batch (same message), --dry-run (preview), --yes (skip prompts)"
@@ -3297,6 +3847,14 @@ main() {
         status-all)
             shift
             status-all "$@"
+            ;;
+        fetch-all)
+            shift
+            fetch-all "$@"
+            ;;
+        pull-all)
+            shift
+            pull-all "$@"
             ;;
         push-all)
             shift

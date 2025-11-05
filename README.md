@@ -42,8 +42,10 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Repository Initialization**: Initialize a new Git repository and push it to GitHub.
 - **Commit Management**: Revert to previous commits and undo reverts.
 - **Repository Cloning**: Easily clone repositories and switch to their directory.
-- **Batch Repository Operations**: Clone, push, and check status across multiple repositories simultaneously.
-- **Parallel Cloning**: Clone multiple repositories concurrently for better performance.
+- **Batch Repository Operations**: Clone, push, fetch, pull, and check status across multiple repositories simultaneously.
+- **Parallel Processing**: Clone, fetch, and pull multiple repositories concurrently for better performance.
+- **Smart Conflict Detection**: Advanced merge conflict detection and optional auto-resolution for pull operations.
+- **Multiple Merge Strategies**: Support for merge, rebase, and fast-forward only strategies in batch operations.
 - **Organization Repository Support**: Smart detection and cloning of organization repositories.
 - **Easy Installation**: Simple install and uninstall process.
 - **User-Friendly**: Colorized output and helpful error messages.
@@ -178,6 +180,87 @@ After installation, you can use GitS with the following commands:
 - `gits status-all [OPTIONS]` - Check git status across all repositories in directory tree
   - **Comprehensive Status Reporting**: Shows status for all repositories with intelligent filtering
   - **Multiple Display Modes**: Compact, detailed, and filtered views
+  - **Performance Optimized**: Efficient directory traversal and status checking
+  - **Options:**
+    - `--all` - Show all repositories with status (default: only repos needing attention)
+    - `--compact` - Show compact summary format
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Show only repositories needing attention
+    gits status-all
+    
+    # Show all repositories with detailed status
+    gits status-all --all
+    
+    # Compact summary of all repositories
+    gits status-all --all --compact
+    ```
+
+- `gits fetch-all [OPTIONS]` - Fetch updates from all repositories in directory tree
+  - **Parallel Fetching**: Simultaneously fetch from multiple repositories for better performance
+  - **Flexible Output Control**: Quiet mode for scripting or verbose mode for monitoring
+  - **Tag Management**: Optional tag fetching with `--no-tags` flag
+  - **Configurable Concurrency**: Adjust parallel processing with `--max-concurrent`
+  - **Options:**
+    - `--no-parallel` - Disable parallel fetching for sequential processing
+    - `--max-concurrent N` - Set maximum concurrent fetches (default: 5)
+    - `--no-tags` - Skip fetching tags for faster operation
+    - `-q, --quiet` - Suppress output except errors
+    - `-v, --verbose` - Show detailed output with repository names
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Parallel fetch with tags (default behavior)
+    gits fetch-all
+    
+    # Sequential fetching for debugging
+    gits fetch-all --no-parallel
+    
+    # Higher concurrency for large repository sets
+    gits fetch-all --max-concurrent 10
+    
+    # Fast fetch without tags
+    gits fetch-all --no-tags
+    
+    # Quiet mode for automation scripts
+    gits fetch-all --quiet
+    ```
+
+- `gits pull-all [OPTIONS]` - Pull updates from all repositories with conflict detection
+  - **Smart Conflict Detection**: Automatically detects and reports merge conflicts
+  - **Multiple Merge Strategies**: Support for merge, rebase, and fast-forward only
+  - **Auto-merge Options**: Optional automatic conflict resolution for simple cases
+  - **Parallel Operation**: Process multiple repositories simultaneously
+  - **Conflict Handling**: Options to abort on first conflict or continue processing
+  - **Options:**
+    - `--no-parallel` - Disable parallel pulling for sequential processing
+    - `--max-concurrent N` - Set maximum concurrent pulls (default: 5)
+    - `--strategy STRATEGY` - Merge strategy: `merge`, `rebase`, or `ff-only` (default: merge)
+    - `--auto-merge` - Automatically resolve simple conflicts (use with caution)
+    - `--abort-on-conflict` - Stop on first merge conflict encountered
+    - `-v, --verbose` - Show detailed output with repository names and results
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Standard pull with merge strategy (default)
+    gits pull-all
+    
+    # Use rebase strategy for linear history
+    gits pull-all --strategy rebase
+    
+    # Fast-forward only pulls (safest option)
+    gits pull-all --strategy ff-only
+    
+    # Attempt auto-merge for simple conflicts
+    gits pull-all --auto-merge
+    
+    # Stop immediately on first conflict
+    gits pull-all --abort-on-conflict
+    
+    # High concurrency for many repositories
+    gits pull-all --max-concurrent 10
+    ```
   - **Performance Optimized**: Efficient directory traversal and status checking
   - **Options:**
     - `--all` - Show all repositories with status (default: only repos needing attention)
