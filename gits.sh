@@ -671,6 +671,8 @@ status-all() {
         # Get repository status
         local status_output=$(git status --porcelain 2>/dev/null)
         local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        unpushed=$(echo "$unpushed" | grep -o '^[0-9]*$' | head -1)
+        [ -z "$unpushed" ] && unpushed="0"
         local has_changes=false
         
         if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
