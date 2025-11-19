@@ -1419,7 +1419,9 @@ perform_git_pull() {
         if echo "$error_output" | grep -q "CONFLICT"; then
             if [[ "$auto_merge" == true ]]; then
                 # Try to auto-resolve simple conflicts
-                if git diff --name-only --diff-filter=U | head -1 | xargs -r git checkout --theirs 2>/dev/null; then
+                local conflict_file
+                conflict_file=$(git diff --name-only --diff-filter=U | head -1)
+                if [[ -n "$conflict_file" ]] && git checkout --theirs "$conflict_file" 2>/dev/null; then
                     if git add -A && git commit --no-edit 2>/dev/null; then
                         echo "success"
                     else
