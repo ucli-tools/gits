@@ -616,7 +616,139 @@ push-all() {
     echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
 }
 
-# Function to check status of all repositories
+ # Function to set a branch across all repositories
+set-all() {
+    local target_branch=""
+    local dry_run=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --dry-run|-n)
+                dry_run=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits set-all <branch-name> [OPTIONS]${NC}"
+                echo -e "${BLUE}Ensure all repositories in the current directory tree are on the same branch${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  -n, --dry-run   Show what would be done without executing"
+                echo -e "  -h, --help      Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits set-all feature/progress-123"
+                echo -e "  gits set-all release/1.0 --dry-run"
+                return 0
+                ;;
+            *)
+                if [[ -z "$target_branch" ]]; then
+                    target_branch="$1"
+                    shift
+                else
+                    echo -e "${RED}Error: Unknown option '$1'${NC}"
+                    echo -e "Use 'gits set-all --help' for usage information."
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    if [[ -z "$target_branch" ]]; then
+        echo -e "${RED}Error: Branch name is required.${NC}"
+        echo -e "Usage: gits set-all <branch-name> [OPTIONS]"
+        return 1
+    fi
+    
+    echo -e "${GREEN}Setting branch '${target_branch}' across all repositories...${NC}"
+    echo -e ""
+    
+    local total_repos=0
+    local created=0
+    local switched=0
+    local already_on_branch=0
+    local failed=0
+    
+    # Find all git repositories
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        cd "$repodir" || continue
+        
+        total_repos=$((total_repos + 1))
+        
+        local current_branch
+        current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📁 Repository: $repodir${NC} ($total_repos)"
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
+            echo -e "Current branch: ${GREEN}$current_branch${NC}"
+        else
+            echo -e "Current branch: ${ORANGE}(detached HEAD)${NC}"
+        fi
+        
+        if [[ "$current_branch" == "$target_branch" ]]; then
+            echo -e "${GREEN}Already on branch '${target_branch}'. Skipping.${NC}"
+            already_on_branch=$((already_on_branch + 1))
+            echo -e ""
+            cd - >/dev/null 2>&1
+            continue
+        fi
+        
+        # Check if the branch already exists locally
+        if git show-ref --verify --quiet "refs/heads/$target_branch"; then
+            if [[ "$dry_run" == true ]]; then
+                echo -e "${ORANGE}[DRY RUN] Would switch to existing branch '${target_branch}'${NC}"
+                switched=$((switched + 1))
+            else
+                echo -e "${BLUE}Switching to existing branch '${target_branch}'...${NC}"
+                if git checkout "$target_branch"; then
+                    echo -e "${GREEN}Switched to existing branch '${target_branch}'.${NC}"
+                    switched=$((switched + 1))
+                else
+                    echo -e "${RED}❌ Failed to switch to branch '${target_branch}'.${NC}"
+                    failed=$((failed + 1))
+                fi
+            fi
+        else
+            if [[ "$dry_run" == true ]]; then
+                echo -e "${ORANGE}[DRY RUN] Would create and switch to new branch '${target_branch}' from current HEAD${NC}"
+                created=$((created + 1))
+            else
+                echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
+                if git checkout -b "$target_branch"; then
+                    echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
+                    created=$((created + 1))
+                else
+                    echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
+                    failed=$((failed + 1))
+                fi
+            fi
+        fi
+        
+        echo -e ""
+        cd - >/dev/null 2>&1
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ $total_repos -eq 0 ]]; then
+        echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+        return 0
+    fi
+    
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}Set-all Summary:${NC}"
+    echo -e "  Total repositories: $total_repos"
+    echo -e "  ${GREEN}Already on '${target_branch}': $already_on_branch${NC}"
+    echo -e "  ${GREEN}Switched to existing branch: $switched${NC}"
+    echo -e "  ${GREEN}Created new branch: $created${NC}"
+    if [[ "$failed" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed${NC}"
+    fi
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+}
+
+ # Function to check status of all repositories
 status-all() {
     local show_clean=false
     local compact=false
@@ -4107,6 +4239,10 @@ main() {
         status-all)
             shift
             status-all "$@"
+            ;;
+        set-all)
+            shift
+            set-all "$@"
             ;;
         fetch-all)
             shift
