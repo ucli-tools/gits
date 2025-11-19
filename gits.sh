@@ -748,6 +748,55 @@ set-all() {
     echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
 }
 
+list-all() {
+    echo -e "${GREEN}Listing git repositories and current branches...${NC}"
+    echo -e ""
+
+    local total_repos=0
+
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        cd "$repodir" || continue
+
+        total_repos=$((total_repos + 1))
+
+        local branch
+        branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+            branch="(detached HEAD)"
+        fi
+
+        local status_output
+        status_output=$(git status --porcelain 2>/dev/null)
+        local unpushed
+        unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        unpushed=$(echo "$unpushed" | grep -o '^[0-9]*$' | head -1)
+        [ -z "$unpushed" ] && unpushed="0"
+
+        local flags=""
+        if [[ -n "$status_output" ]]; then
+            flags="${flags}[modified]"
+        fi
+        if [[ "$unpushed" -gt 0 ]]; then
+            flags="${flags}[+$unpushed ahead]"
+        fi
+        if [[ -z "$flags" ]]; then
+            flags="[clean]"
+        fi
+
+        printf "${BLUE}📁 %-50s${NC}  ${GREEN}%-20s${NC} %s\n" "$repodir" "$branch" "$flags"
+
+        cd - >/dev/null 2>&1
+    done < <(find . -name .git -type d -print0)
+
+    if [[ $total_repos -eq 0 ]]; then
+        echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+    else
+        echo -e ""
+        echo -e "${PURPLE}Total repositories: $total_repos${NC}"
+    fi
+}
+
  # Function to check status of all repositories
 status-all() {
     local show_clean=false
@@ -4072,6 +4121,11 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits save-issues"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown\n"
     
+    echo -e "  ${GREEN}list-all${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} List repositories with current branch and simple status flags"
+    echo -e "                  ${BLUE}Note:${NC}    Shows [modified], [+N ahead], or [clean] per repository"
+    echo -e "                  ${BLUE}Example:${NC} gits list-all\n"
+    
     echo -e "  ${GREEN}status-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Check git status across all repositories in directory tree"
     echo -e "                  ${BLUE}Options:${NC} --all (show clean repos), --compact (summary format)"
@@ -4101,6 +4155,16 @@ help() {
     echo -e "                  ${BLUE}Note:${NC}    Interactive workflow with safety features and auto-generated messages"
     echo -e "                  ${BLUE}Example:${NC} gits push-all"
     echo -e "                  ${BLUE}Example:${NC} gits push-all --batch -m \"Update documentation\"\n"
+
+    echo -e "  ${GREEN}set-all <branch-name>${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Create or switch to the same branch across all repositories"
+    echo -e "                  ${BLUE}Options:${NC} --dry-run (preview changes without modifying branches)"
+    echo -e "                  ${BLUE}Example:${NC} gits set-all feature/my-progress-branch"
+    echo -e "                  ${BLUE}Example:${NC} gits set-all feature/my-progress-branch --dry-run\n"
+
+    echo -e "  ${GREEN}change-all <branch-name>${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Alias for set-all for multi-repo branch changes"
+    echo -e "                  ${BLUE}Example:${NC} gits change-all feature/my-progress-branch\n"
 
     echo -e "  ${GREEN}login${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactive login to selected platform"
@@ -4240,7 +4304,15 @@ main() {
             shift
             status-all "$@"
             ;;
+        list-all)
+            shift
+            list-all "$@"
+            ;;
         set-all)
+            shift
+            set-all "$@"
+            ;;
+        change-all)
             shift
             set-all "$@"
             ;;

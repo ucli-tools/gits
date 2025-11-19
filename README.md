@@ -197,6 +197,29 @@ After installation, you can use GitS with the following commands:
     gits status-all --all --compact
     ```
 
+- `gits list-all` - List git repositories and their current branches
+  - **Overview:** Shows each repository path, current branch, and simple status flags
+  - **Status Flags:** `[modified]`, `[+N ahead]`, or `[clean]`
+  - **Examples:**
+    ```bash
+    gits list-all
+    ```
+
+- `gits set-all <branch-name>` / `gits change-all <branch-name>` - Align branches across all repositories
+  - **Purpose:** Ensure all repositories under the current directory tree are on the same branch
+  - **Local Only:** Creates or switches local branches; pushing and upstream setup are still handled by `gits push-all`
+  - **Options:**
+    - `--dry-run, -n` - Show what would be done without executing
+  - **Examples:**
+    ```bash
+    # Preview branch alignment
+    gits set-all feature/my-progress-branch --dry-run
+
+    # Align branches, then batch-commit and push
+    gits set-all feature/my-progress-branch
+    gits push-all --batch -m "Progress update"
+    ```
+
 - `gits fetch-all [OPTIONS]` - Fetch updates from all repositories in directory tree
   - **Parallel Fetching**: Simultaneously fetch from multiple repositories for better performance
   - **Flexible Output Control**: Quiet mode for scripting or verbose mode for monitoring
