@@ -1449,6 +1449,7 @@ clone-all() {
     local use_auth=false
     local parallel_cloning=true
     local max_concurrent=5
+    local include_archived=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -1462,6 +1463,7 @@ clone-all() {
                 echo -e "  --server URL         Gitea server URL (default: git.ourworld.tf)"
                 echo -e "  --no-parallel        Disable parallel cloning"
                 echo -e "  --max-concurrent N   Maximum concurrent clones (default: 5)"
+                echo -e "  --archived           Include archived repositories"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
                 echo -e "  gits clone-all myusername"
@@ -1481,6 +1483,10 @@ clone-all() {
             --max-concurrent)
                 max_concurrent="$2"
                 shift 2
+                ;;
+            --archived)
+                include_archived=true
+                shift
                 ;;
             *)
                 username="$1"
@@ -1687,7 +1693,7 @@ clone-all() {
                     fi
                 else
                     # Successfully accessed repos with GitHub CLI
-                    repos_json=$(gh repo list "$username" --json=id,name,sshUrl,url,isPrivate --limit 100 2>/dev/null)
+                    repos_json=$(gh repo list "$username" --json=id,name,sshUrl,url,isPrivate,isArchived --limit 100 2>/dev/null)
                 fi
             else
                 # Public access only - use GitHub API
@@ -1921,21 +1927,32 @@ clone-all() {
         local repo_name=""
         local clone_url=""
         local ssh_url=""
+        local is_archived="false"
         
         # Handle platform-specific field names
         case "$platform" in
             github)
                 repo_name=$(echo "$repo" | jq -r '.name')
-                clone_url=$(echo "$repo" | jq -r '.url + ".git"')
-                ssh_url=$(echo "$repo" | jq -r '.sshUrl')
+                clone_url=$(echo "$repo" | jq -r '.clone_url // (.url + ".git")')
+                ssh_url=$(echo "$repo" | jq -r '.sshUrl // .ssh_url')
+                is_archived=$(echo "$repo" | jq -r '.isArchived // .archived // false')
                 ;;
             gitea)
                 repo_name=$(echo "$repo" | jq -r '.name')
                 clone_url=$(echo "$repo" | jq -r '.clone_url // .http_url')
                 ssh_url=$(echo "$repo" | jq -r '.ssh_url // .git_url')
+                is_archived=$(echo "$repo" | jq -r '.archived // false')
                 ;;
         esac
         
+        # Skip archived repositories unless explicitly requested
+        if [[ "$include_archived" != true ]] && [[ "$is_archived" == "true" ]]; then
+            if [[ "$verbose" == true ]]; then
+                echo -e "${ORANGE}Repository $repo_name is archived. Skipping...${NC}"
+            fi
+            continue
+        fi
+
         # Skip if we couldn't get a valid repository name
         if [[ -z "$repo_name" ]] || [[ "$repo_name" == "null" ]]; then
             echo -e "${ORANGE}Skipping repository with invalid name${NC}"
