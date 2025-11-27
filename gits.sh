@@ -3800,6 +3800,12 @@ save-issues() {
         return 1
     fi
     
+    # Normalize repo info (strip optional .git suffix from the repo portion)
+    local repo_owner_part=$(echo "$repo_info" | cut -d'/' -f1)
+    local repo_name_part=$(echo "$repo_info" | cut -d'/' -f2)
+    repo_name_part="${repo_name_part%.git}"
+    repo_info="$repo_owner_part/$repo_name_part"
+
     # Create output directory
     local safe_repo_name=$(echo "$repo_info" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
     output_dir="./${safe_repo_name}-issues"
@@ -3823,6 +3829,7 @@ save-issues() {
             local gitea_server="git.ourworld.tf"
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
+            repo="${repo%.git}"
             
             # Check for authentication with token caching
             local auth_header=""
@@ -3927,19 +3934,37 @@ save-issues() {
         echo -e "${ORANGE}Response: $issues_json${NC}"
         return 1
     fi
+
+    # Ensure the response is an array of issues (not an error object or other shape)
+    if ! echo "$issues_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        echo -e "${RED}Error: API response is not a list of issues${NC}"
+        echo -e "${ORANGE}Response:${NC}"
+        echo "$issues_json" | jq '.'
+        return 1
+    fi
     
     # Process and save issues
     local saved_count=0
     
     while read -r issue; do
+        # Skip any non-object items defensively
+        if ! echo "$issue" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            continue
+        fi
+
         local issue_number=$(echo "$issue" | jq -r '.number // .id')
-        local title=$(echo "$issue" | jq -r '.title')
+        local title=$(echo "$issue" | jq -r '.title // ""')
         local body=$(echo "$issue" | jq -r '.body // empty')
-        local state=$(echo "$issue" | jq -r '.state')
+        local state=$(echo "$issue" | jq -r '.state // ""')
         local author=$(echo "$issue" | jq -r '.author.login // .user.login // "Unknown"')
-        local created_at=$(echo "$issue" | jq -r '.createdAt // .created_at')
-        local url=$(echo "$issue" | jq -r '.url // .html_url')
+        local created_at=$(echo "$issue" | jq -r '.createdAt // .created_at // ""')
+        local url=$(echo "$issue" | jq -r '.url // .html_url // ""')
         
+        # If we still don't have a usable identifier, skip this entry
+        if [[ -z "$issue_number" || "$issue_number" == "null" ]]; then
+            continue
+        fi
+
         # Create safe filename
         local safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-+/-/g' | sed 's/^-//; s/-$//')
         local filename="${issue_number}-${safe_title}.md"
@@ -3982,9 +4007,6 @@ EOF
         echo -e "${GREEN}Saved: $filename${NC}"
         ((saved_count++))
         
-        echo -e "${GREEN}Saved: $filename${NC}"
-        ((saved_count++))
-        
     done < <(echo "$issues_json" | jq -c '.[]')
     
     # Sync functionality: Remove stale files for closed/resolved issues
@@ -3994,7 +4016,15 @@ EOF
     
     # Collect current issue numbers
     while read -r issue; do
-        current_issues+=($(echo "$issue" | jq -r '.number // .id'))
+        # Skip non-object entries
+        if ! echo "$issue" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            continue
+        fi
+
+        local num=$(echo "$issue" | jq -r '.number // .id')
+        if [[ -n "$num" && "$num" != "null" ]]; then
+            current_issues+=("$num")
+        fi
     done < <(echo "$issues_json" | jq -c '.[]')
     
     # Check for stale files
