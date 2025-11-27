@@ -3965,6 +3965,33 @@ save-issues() {
             continue
         fi
 
+        # Fetch comments for this issue (platform-specific)
+        local comments_json=""
+        case "$platform" in
+            "1"|"gitea")
+                # Use Gitea issues comments API
+                local comments_endpoint="$base_url/api/v1/repos/$owner/$repo/issues/$issue_number/comments"
+                if [ -n "$auth_header" ]; then
+                    comments_json=$(curl -s -H "$auth_header" "$comments_endpoint")
+                else
+                    comments_json=$(curl -s "$comments_endpoint")
+                fi
+                ;;
+            "2"|"github"|*)
+                # Use gh CLI to get comments for GitHub issues
+                if command -v gh &> /dev/null; then
+                    comments_json=$(gh issue view "$issue_number" --json comments --jq '.comments' 2>/dev/null)
+                fi
+                ;;
+        esac
+
+        # Validate comments JSON is an array; otherwise ignore
+        if ! echo "$comments_json" | jq . >/dev/null 2>&1; then
+            comments_json=""
+        elif ! echo "$comments_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            comments_json=""
+        fi
+
         # Create safe filename
         local safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-+/-/g' | sed 's/^-//; s/-$//')
         local filename="${issue_number}-${safe_title}.md"
@@ -3984,10 +4011,39 @@ save-issues() {
 
 $body
 EOF
+
+                # Append comments section if any
+                if [[ -n "$comments_json" ]] && echo "$comments_json" | jq -e 'length > 0' >/dev/null 2>&1; then
+                    {
+                        echo ""
+                        echo "## Comments"
+                        echo ""
+                        while read -r comment; do
+                            if ! echo "$comment" | jq -e 'type == "object"' >/dev/null 2>&1; then
+                                continue
+                            fi
+                            local comment_author
+                            local comment_created
+                            local comment_body
+                            comment_author=$(echo "$comment" | jq -r '.author.login // .user.login // .user.username // .poster.login // .poster.username // "Unknown"')
+                            comment_created=$(echo "$comment" | jq -r '.createdAt // .created_at // ""')
+                            comment_body=$(echo "$comment" | jq -r '.body // empty')
+
+                            echo "- [$comment_created] $comment_author:"
+                            echo ""
+                            echo "$comment_body"
+                            echo ""
+                        done < <(echo "$comments_json" | jq -c '.[]')
+                    } >> "$output_dir/$filename"
+                fi
                 ;;
             json)
-                # Save as individual JSON file
-                echo "$issue" | jq '.' > "$output_dir/${issue_number}.json"
+                # Save as individual JSON file, including comments if available
+                if [[ -n "$comments_json" ]]; then
+                    echo "$issue" | jq --argjson comments "$comments_json" '. + {comments: $comments}' > "$output_dir/${issue_number}.json"
+                else
+                    echo "$issue" | jq '.' > "$output_dir/${issue_number}.json"
+                fi
                 filename="${issue_number}.json"
                 ;;
             plain)
@@ -4001,6 +4057,31 @@ URL: $url
 
 $body
 EOF
+
+                # Append comments section if any
+                if [[ -n "$comments_json" ]] && echo "$comments_json" | jq -e 'length > 0' >/dev/null 2>&1; then
+                    {
+                        echo ""
+                        echo "Comments:"
+                        echo ""
+                        while read -r comment; do
+                            if ! echo "$comment" | jq -e 'type == "object"' >/dev/null 2>&1; then
+                                continue
+                            fi
+                            local comment_author
+                            local comment_created
+                            local comment_body
+                            comment_author=$(echo "$comment" | jq -r '.author.login // .user.login // .user.username // .poster.login // .poster.username // "Unknown"')
+                            comment_created=$(echo "$comment" | jq -r '.createdAt // .created_at // ""')
+                            comment_body=$(echo "$comment" | jq -r '.body // empty')
+
+                            echo "- [$comment_created] $comment_author:"
+                            echo ""
+                            echo "$comment_body"
+                            echo ""
+                        done < <(echo "$comments_json" | jq -c '.[]')
+                    } >> "$output_dir/$filename"
+                fi
                 ;;
         esac
         
