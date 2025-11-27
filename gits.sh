@@ -712,17 +712,37 @@ set-all() {
                 fi
             fi
         else
-            if [[ "$dry_run" == true ]]; then
-                echo -e "${ORANGE}[DRY RUN] Would create and switch to new branch '${target_branch}' from current HEAD${NC}"
-                created=$((created + 1))
+            # If no local branch, check for a matching remote branch (e.g., origin/$target_branch)
+            local remote_ref=""
+            remote_ref=$(git for-each-ref --format='%(refname:short)' "refs/remotes" 2>/dev/null | grep -E ".*/$target_branch$" | head -n 1)
+
+            if [[ -n "$remote_ref" ]]; then
+                if [[ "$dry_run" == true ]]; then
+                    echo -e "${ORANGE}[DRY RUN] Would checkout remote branch '${remote_ref}' as local '${target_branch}'${NC}"
+                    switched=$((switched + 1))
+                else
+                    echo -e "${BLUE}Checking out remote branch '${remote_ref}' as local '${target_branch}'...${NC}"
+                    if git checkout -b "$target_branch" --track "$remote_ref"; then
+                        echo -e "${GREEN}Switched to branch '${target_branch}' tracking '${remote_ref}'.${NC}"
+                        switched=$((switched + 1))
+                    else
+                        echo -e "${RED}❌ Failed to checkout remote branch '${remote_ref}'.${NC}"
+                        failed=$((failed + 1))
+                    fi
+                fi
             else
-                echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
-                if git checkout -b "$target_branch"; then
-                    echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
+                if [[ "$dry_run" == true ]]; then
+                    echo -e "${ORANGE}[DRY RUN] Would create and switch to new branch '${target_branch}' from current HEAD${NC}"
                     created=$((created + 1))
                 else
-                    echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
-                    failed=$((failed + 1))
+                    echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
+                    if git checkout -b "$target_branch"; then
+                        echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
+                        created=$((created + 1))
+                    else
+                        echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
+                        failed=$((failed + 1))
+                    fi
                 fi
             fi
         fi
