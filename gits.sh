@@ -49,7 +49,7 @@ get_cached_token() {
             "github")
                 grep "^github.com=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
                 ;;
-            "gitea")
+            "gitea"|"forgejo")
                 grep "^$server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
                 ;;
         esac
@@ -79,7 +79,7 @@ save_token() {
             "github")
                 grep -v "^github.com=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
                 ;;
-            "gitea")
+            "gitea"|"forgejo")
                 grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
                 ;;
         esac
@@ -91,7 +91,7 @@ save_token() {
         "github")
             echo "github.com=$token" >> "$tokens_file"
             ;;
-        "gitea")
+        "gitea"|"forgejo")
             echo "$server=$token" >> "$tokens_file"
             ;;
     esac
@@ -111,7 +111,7 @@ clear_cached_token() {
             "github")
                 grep -v "^github.com=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
                 ;;
-            "gitea")
+            "gitea"|"forgejo")
                 grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
                 ;;
         esac
@@ -219,6 +219,76 @@ get_tea_token() {
     return 1
 }
 
+# Token management command
+token() {
+    local action="$1"
+    local server="$2"
+    local config_dir=$(get_gits_config_dir)
+    local tokens_file="$config_dir/tokens.conf"
+    
+    case "$action" in
+        list)
+            echo -e "${GREEN}Cached tokens:${NC}"
+            echo -e "${BLUE}Location: $tokens_file${NC}"
+            echo -e ""
+            
+            if [ -f "$tokens_file" ]; then
+                while IFS='=' read -r server_name token_value; do
+                    if [ -n "$server_name" ] && [ -n "$token_value" ]; then
+                        # Mask the token for security
+                        local masked_token="${token_value:0:8}...${token_value: -4}"
+                        echo -e "  ${PURPLE}$server_name${NC}: $masked_token"
+                    fi
+                done < "$tokens_file"
+            else
+                echo -e "${ORANGE}No cached tokens found${NC}"
+            fi
+            ;;
+        show)
+            local target_server="${server:-forge.ourworld.tf}"
+            echo -e "${GREEN}Token for $target_server:${NC}"
+            
+            if [ -f "$tokens_file" ]; then
+                local token=$(grep "^$target_server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2)
+                if [ -n "$token" ]; then
+                    local masked_token="${token:0:8}...${token: -4}"
+                    echo -e "  ${PURPLE}$masked_token${NC}"
+                else
+                    echo -e "${ORANGE}No token found for $target_server${NC}"
+                fi
+            else
+                echo -e "${ORANGE}No cached tokens found${NC}"
+            fi
+            ;;
+        clear)
+            local target_server="${server:-forge.ourworld.tf}"
+            echo -e "${GREEN}Clearing token for $target_server...${NC}"
+            
+            if [ -f "$tokens_file" ]; then
+                grep -v "^$target_server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
+                mv "$tokens_file.tmp" "$tokens_file"
+                echo -e "${GREEN}Token cleared for $target_server${NC}"
+            else
+                echo -e "${ORANGE}No cached tokens found${NC}"
+            fi
+            ;;
+        *)
+            echo -e "${GREEN}Usage: gits token <command> [server]${NC}"
+            echo -e ""
+            echo -e "${PURPLE}Commands:${NC}"
+            echo -e "  list              List all cached tokens"
+            echo -e "  show [server]     Show token for server (default: forge.ourworld.tf)"
+            echo -e "  clear [server]    Clear token for server (default: forge.ourworld.tf)"
+            echo -e ""
+            echo -e "${BLUE}Examples:${NC}"
+            echo -e "  gits token list"
+            echo -e "  gits token show forge.ourworld.tf"
+            echo -e "  gits token show git.ourworld.tf"
+            echo -e "  gits token clear forge.ourworld.tf"
+            ;;
+    esac
+}
+
 # Function to detect platform from git remote
 detect_platform() {
     local remote_url=$(git remote get-url origin 2>/dev/null)
@@ -227,7 +297,10 @@ detect_platform() {
         return 1
     fi
     
-    if [[ "$remote_url" == *"github.com"* ]]; then
+    if [[ "$remote_url" == *"forge.ourworld.tf"* ]] || [[ "$remote_url" == *"forgejo"* ]]; then
+        echo "forgejo"
+        return 0
+    elif [[ "$remote_url" == *"github.com"* ]]; then
         echo "github"
         return 0
     elif [[ "$remote_url" == *"git.ourworld.tf"* ]] || [[ "$remote_url" == *"gitea"* ]]; then
@@ -248,7 +321,9 @@ get_repo_info() {
     fi
     
     local repo_path=""
-    if [[ "$remote_url" == *"github.com"* ]]; then
+    if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*forge\.ourworld\.tf[:/](.*)(\.git)?|\1|')
+    elif [[ "$remote_url" == *"github.com"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*github\.com[:/](.*)(\.git)?|\1|')
     elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
@@ -295,7 +370,9 @@ clone() {
         path_part="${path_part%.git}"
 
         # Construct SSH URL based on the host
-        if [[ "$host_part" == *"github.com"* ]]; then
+        if [[ "$host_part" == *"forge.ourworld.tf"* ]]; then
+            ssh_url="git@forge.ourworld.tf:$path_part.git"
+        elif [[ "$host_part" == *"github.com"* ]]; then
             ssh_url="git@github.com:$path_part.git"
         elif [[ "$host_part" == *"git.ourworld.tf"* ]]; then
             ssh_url="git@git.ourworld.tf:$path_part.git"
@@ -1517,9 +1594,31 @@ clone-all() {
     
     # Detect platform and extract username if not provided
     local is_org=false
+    local server_url=""  # Generic server URL for Forgejo/Gitea
     if [ -n "$username" ]; then
         # Parse input to detect platform and extract username
-        if [[ "$username" == *"github.com"* ]]; then
+        if [[ "$username" == *"forge.ourworld.tf"* ]] || [[ "$username" == *"forgejo"* ]]; then
+            platform="forgejo"
+            if [[ "$username" == http* ]]; then
+                server_url=$(echo "$username" | sed -E 's|https?://([^/]+)/.*|\1|')
+                username=$(echo "$username" | sed -E 's|https?://[^/]+/([^/]+).*|\1|')
+                # Check if this looks like an organization URL
+                if [[ "$username" == *"/"* ]]; then
+                    is_org=true
+                    server_url=$(echo "$username" | cut -d'/' -f1)
+                    username=$(echo "$username" | cut -d'/' -f2)
+                fi
+            else
+                server_url=$(echo "$username" | cut -d'/' -f1)
+                username=$(echo "$username" | cut -d'/' -f2)
+                # Check if this looks like an organization URL (has slash)
+                if [[ "$username" == *"/"* ]]; then
+                    is_org=true
+                    username=$(echo "$username" | cut -d'/' -f2)
+                fi
+            fi
+            [ -z "$server_url" ] && server_url="forge.ourworld.tf"
+        elif [[ "$username" == *"github.com"* ]]; then
             platform="github"
             # Extract username from various GitHub URL formats
             if [[ "$username" == http* ]]; then
@@ -1554,20 +1653,26 @@ clone-all() {
     else
         # Interactive mode
         echo -e "${GREEN}Which platform would you like to use?${NC}"
-        echo -e "1) Gitea"
-        echo -e "2) GitHub"
-        read -p "Enter your choice (1/2): " platform_choice
+        echo -e "1) Forgejo (forge.ourworld.tf)"
+        echo -e "2) Gitea (git.ourworld.tf)"
+        echo -e "3) GitHub"
+        read -p "Enter your choice (1/2/3): " platform_choice
         
         case "$platform_choice" in
-            1) platform="gitea" ;;
-            2) platform="github" ;;
+            1) platform="forgejo" ;;
+            2) platform="gitea" ;;
+            3) platform="github" ;;
             *)
                 echo -e "${RED}Invalid choice. Defaulting to GitHub.${NC}"
                 platform="github"
                 ;;
         esac
         
-        if [[ "$platform" == "gitea" ]]; then
+        if [[ "$platform" == "forgejo" ]]; then
+            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+            read server_input
+            server_url="${server_input:-forge.ourworld.tf}"
+        elif [[ "$platform" == "gitea" ]]; then
             echo -e "${GREEN}Enter Gitea server URL (default: git.ourworld.tf):${NC}"
             read server_input
             [ -n "$server_input" ] && gitea_server="$server_input"
@@ -1584,9 +1689,10 @@ clone-all() {
     
     # Validate platform
     case "$platform" in
-        github|gitea)
+        forgejo|github|gitea)
             echo -e "${GREEN}Platform: ${platform}${NC}"
             echo -e "${GREEN}Username: $username${NC}"
+            [[ "$platform" == "forgejo" ]] && echo -e "${GREEN}Server: $server_url${NC}"
             [[ "$platform" == "gitea" ]] && echo -e "${GREEN}Server: $gitea_server${NC}"
             ;;
         *)
@@ -1604,7 +1710,7 @@ clone-all() {
                 return 1
             fi
             ;;
-        gitea)
+        forgejo|gitea)
             if ! command -v curl &> /dev/null; then
                 echo -e "${RED}Error: curl is required but not installed.${NC}"
                 return 1
@@ -1728,6 +1834,144 @@ clone-all() {
                     return 1
                 fi
             fi
+            ;;
+        forgejo)
+            # Handle Forgejo authentication using cached token system
+            echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
+            echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
+            read -r use_auth_response
+            
+            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                # Use token caching system
+                local cached_token=$(get_cached_token "forgejo" "$server_url")
+                
+                if [ -n "$cached_token" ]; then
+                    echo -e "${GREEN}Found cached authentication token for $server_url${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
+                fi
+                
+                # If no cached token or user declined, prompt for token
+                if [ -z "$auth_header" ]; then
+                    echo -e "${GREEN}Enter your Forgejo API token:${NC}"
+                    echo -e "${BLUE}Generate one at: https://$server_url/user/settings/applications${NC}"
+                    read -s API_TOKEN
+                    echo
+                    
+                    if [ -n "$API_TOKEN" ]; then
+                        auth_header="Authorization: token $API_TOKEN"
+                        save_token "forgejo" "$server_url" "$API_TOKEN"
+                        echo -e "${GREEN}Token saved for future use${NC}"
+                    else
+                        echo -e "${RED}No token provided.${NC}"
+                        cd - > /dev/null
+                        return 1
+                    fi
+                fi
+            fi
+            
+            # Construct API endpoint (Forgejo uses same API as Gitea)
+            local base_url
+            if [[ "$server_url" != http* ]]; then
+                base_url="https://$server_url"
+            else
+                base_url="$server_url"
+            fi
+            
+            # Smart endpoint selection based on whether we want organization or user repos
+            local primary_endpoint=""
+            local secondary_endpoints=()
+            local endpoint_names=()
+            
+            if [[ "$is_org" == true ]]; then
+                # For organizations, prefer org endpoint first
+                echo -e "${BLUE}Detected organization request for '$username'${NC}"
+                primary_endpoint="$base_url/api/v1/orgs/$username/repos"
+                endpoint_names+=("organization")
+                secondary_endpoints+=("$base_url/api/v1/users/$username/repos")
+                endpoint_names+=("user")
+            else
+                # For users, prefer user endpoint first
+                primary_endpoint="$base_url/api/v1/users/$username/repos"
+                endpoint_names+=("user")
+                if [ -n "$auth_header" ]; then
+                    secondary_endpoints+=("$base_url/api/v1/user/repos")
+                    endpoint_names+=("authenticated_user")
+                fi
+            fi
+            
+            local found_repos=false
+            local best_response=""
+            local best_endpoint=""
+            local best_count=0
+            
+            # Try primary endpoint first
+            echo -e "${BLUE}Trying primary endpoint: ${endpoint_names[0]}${NC}"
+            local response=""
+            if [ -n "$auth_header" ]; then
+                response=$(curl -s -H "$auth_header" "$primary_endpoint")
+            else
+                response=$(curl -s "$primary_endpoint")
+            fi
+            
+            # Validate primary response
+            if echo "$response" | jq . &>/dev/null; then
+                local repo_count=$(echo "$response" | jq 'length')
+                if [ "$repo_count" -gt 0 ]; then
+                    echo -e "${GREEN}Found $repo_count repositories via ${endpoint_names[0]} endpoint${NC}"
+                    best_response="$response"
+                    best_endpoint="${endpoint_names[0]}"
+                    best_count="$repo_count"
+                    found_repos=true
+                else
+                    echo -e "${ORANGE}No repositories found via ${endpoint_names[0]} endpoint${NC}"
+                fi
+            else
+                echo -e "${ORANGE}Invalid response from ${endpoint_names[0]} endpoint${NC}"
+            fi
+            
+            # Try secondary endpoints only if primary didn't work well
+            if [ "$found_repos" = false ]; then
+                for i in "${!secondary_endpoints[@]}"; do
+                    local api_endpoint="${secondary_endpoints[i]}"
+                    local endpoint_name="${endpoint_names[i+1]}"
+                    
+                    echo -e "${BLUE}Trying secondary endpoint: $endpoint_name${NC}"
+                    
+                    local response=""
+                    if [ -n "$auth_header" ]; then
+                        response=$(curl -s -H "$auth_header" "$api_endpoint")
+                    else
+                        response=$(curl -s "$api_endpoint")
+                    fi
+                    
+                    if echo "$response" | jq . &>/dev/null; then
+                        local repo_count=$(echo "$response" | jq 'length')
+                        if [ "$repo_count" -gt "$best_count" ]; then
+                            echo -e "${GREEN}Found $repo_count repositories via $endpoint_name endpoint${NC}"
+                            best_response="$response"
+                            best_endpoint="$endpoint_name"
+                            best_count="$repo_count"
+                            found_repos=true
+                        fi
+                    fi
+                done
+            fi
+            
+            if [ "$found_repos" = false ]; then
+                echo -e "${RED}Failed to fetch repositories from Forgejo.${NC}"
+                echo -e "${ORANGE}Please check your username/organization and try again.${NC}"
+                cd - > /dev/null
+                return 1
+            fi
+            
+            repos_json="$best_response"
+            echo -e "${GREEN}Using $best_endpoint endpoint with $best_count repositories${NC}"
             ;;
         gitea)
             # Handle Gitea authentication using existing token system
@@ -2242,7 +2486,9 @@ delete() {
 # Function to detect platform based on remote URL
 detect_platform() {
     local remote_url=$(git remote get-url origin 2>/dev/null)
-    if [[ $remote_url == *"github.com"* ]]; then
+    if [[ $remote_url == *"forge.ourworld.tf"* ]] || [[ $remote_url == *"forgejo"* ]]; then
+        echo "forgejo"  # Forgejo
+    elif [[ $remote_url == *"github.com"* ]]; then
         echo "github"  # GitHub
     elif [[ $remote_url == *"git.ourworld.tf"* ]] || [[ $remote_url == *"gitea"* ]]; then
         echo "gitea"  # Gitea
@@ -2260,7 +2506,9 @@ get_repo_info() {
     fi
     
     local repo_path=""
-    if [[ "$remote_url" == *"github.com"* ]]; then
+    if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
+        repo_path=$(echo "$remote_url" | sed -E 's|.*forge\.ourworld\.tf[:/](.*)(\.git)?|\1|')
+    elif [[ "$remote_url" == *"github.com"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*github\.com[:/](.*)(\.git)?|\1|')
     elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
@@ -3225,12 +3473,73 @@ unrevert() {
 # Function to handle login
 login() {
     echo -e "${GREEN}Which platform would you like to login to?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+    echo -e "1) Forgejo (forge.ourworld.tf or custom)"
+    echo -e "2) Gitea (git.ourworld.tf)"
+    echo -e "3) GitHub"
+    read -p "Enter your choice (1/2/3): " platform_choice
 
     case "$platform_choice" in
         1)
+            # Forgejo login - token-based authentication
+            echo -e "${PURPLE}Logging into Forgejo...${NC}"
+            
+            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+            read -r forgejo_server
+            [ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+            
+            # Remove protocol if provided
+            forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
+            
+            # Check for existing token
+            local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
+            if [ -n "$existing_token" ]; then
+                echo -e "${ORANGE}A token for $forgejo_server already exists.${NC}"
+                echo -e "${GREEN}What would you like to do?${NC}"
+                echo -e "1) Replace with a new token"
+                echo -e "2) Keep existing token"
+                read -p "Enter your choice (1/2): " token_choice
+                
+                if [[ "$token_choice" != "1" ]]; then
+                    echo -e "${GREEN}Keeping existing token for $forgejo_server${NC}"
+                    return 0
+                fi
+            fi
+            
+            echo -e ""
+            echo -e "${BLUE}To generate an API token:${NC}"
+            echo -e "  1. Go to https://$forgejo_server/user/settings/applications"
+            echo -e "  2. Under 'Manage Access Tokens', enter a token name"
+            echo -e "  3. Select scopes: 'repo' (for repository access)"
+            echo -e "  4. Click 'Generate Token' and copy it"
+            echo -e ""
+            
+            echo -e "${GREEN}Enter your Forgejo API token:${NC}"
+            read -s forgejo_token
+            echo
+            
+            if [ -z "$forgejo_token" ]; then
+                echo -e "${RED}Error: Token cannot be empty.${NC}"
+                return 1
+            fi
+            
+            # Validate token by making a test API call
+            echo -e "${BLUE}Validating token...${NC}"
+            local test_response=$(curl -s -H "Authorization: token $forgejo_token" "https://$forgejo_server/api/v1/user" 2>/dev/null)
+            
+            if echo "$test_response" | jq -e '.login' &>/dev/null; then
+                local username=$(echo "$test_response" | jq -r '.login')
+                save_token "forgejo" "$forgejo_server" "$forgejo_token"
+                echo -e "${GREEN}Successfully logged into Forgejo as '$username' on $forgejo_server${NC}"
+                echo -e "${GREEN}Token saved to $(get_gits_config_dir)/tokens.conf${NC}"
+            else
+                echo -e "${RED}Failed to validate token. Please check your token and try again.${NC}"
+                if echo "$test_response" | jq -e '.message' &>/dev/null; then
+                    echo -e "${ORANGE}Error: $(echo "$test_response" | jq -r '.message')${NC}"
+                fi
+                return 1
+            fi
+            ;;
+        2)
             # Check if tea CLI is available
             if ! command -v tea &> /dev/null; then
                 echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
@@ -3325,7 +3634,7 @@ login() {
                 fi
             fi
             ;;
-        2)
+        3)
             echo -e "${PURPLE}Logging into GitHub...${NC}"
             if gh auth login; then
                 echo -e "${GREEN}Successfully logged into GitHub.${NC}"
@@ -3334,7 +3643,7 @@ login() {
             fi
             ;;
         *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
+            echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
             return 1
             ;;
     esac
@@ -3343,12 +3652,34 @@ login() {
 # Function to handle logout
 logout() {
     echo -e "${GREEN}Which platform would you like to logout from?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+    echo -e "1) Forgejo (forge.ourworld.tf or custom)"
+    echo -e "2) Gitea (git.ourworld.tf)"
+    echo -e "3) GitHub"
+    read -p "Enter your choice (1/2/3): " platform_choice
 
     case "$platform_choice" in
         1)
+            # Forgejo logout - clear cached token
+            echo -e "${PURPLE}Logging out from Forgejo...${NC}"
+            
+            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+            read -r forgejo_server
+            [ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+            
+            # Remove protocol if provided
+            forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
+            
+            # Check if token exists
+            local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
+            if [ -z "$existing_token" ]; then
+                echo -e "${ORANGE}No token found for $forgejo_server. You are not logged in.${NC}"
+                return 1
+            fi
+            
+            clear_cached_token "forgejo" "$forgejo_server"
+            echo -e "${GREEN}Successfully logged out from Forgejo ($forgejo_server).${NC}"
+            ;;
+        2)
             # Check if tea CLI is available
             if ! command -v tea &> /dev/null; then
                 echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
@@ -3382,7 +3713,7 @@ logout() {
                 echo -e "${RED}Failed to logout from Gitea.${NC}"
             fi
             ;;
-        2)
+        3)
             echo -e "${PURPLE}Logging out from GitHub...${NC}"
             if gh auth logout; then
                 echo -e "${GREEN}Successfully logged out from GitHub.${NC}"
@@ -3391,7 +3722,7 @@ logout() {
             fi
             ;;
         *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
+            echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
             return 1
             ;;
     esac
@@ -3592,17 +3923,96 @@ fetch-issues() {
     local platform=$(detect_platform)
     if [[ -z "$platform" ]]; then
         echo -e "${RED}Error: Could not detect platform from git remote${NC}"
-        echo -e "${ORANGE}Supported platforms: GitHub, Gitea${NC}"
+        echo -e "${ORANGE}Supported platforms: Forgejo, Gitea, GitHub${NC}"
         return 1
     fi
     
     echo -e "${GREEN}Fetching $state issues for repository: $repo_info${NC}"
-    echo -e "${BLUE}Platform: $([ "$platform" = "gitea" ] && echo "Gitea" || echo "GitHub")${NC}"
+    echo -e "${BLUE}Platform: $([ "$platform" = "forgejo" ] && echo "Forgejo" || ([ "$platform" = "gitea" ] && echo "Gitea" || echo "GitHub"))${NC}"
     echo -e ""
     
     local issues_json=""
     
     case "$platform" in
+        "forgejo")
+            # Extract Forgejo server info
+            local remote_url=$(git remote get-url origin 2>/dev/null)
+            local forgejo_server=""
+            
+            if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
+                forgejo_server="forge.ourworld.tf"
+            else
+                # Try to extract server from URL
+                forgejo_server=$(echo "$remote_url" | sed -E 's|.*@([^:/]+)[:/].*|\1|' | sed -E 's|https?://([^/]+)/.*|\1|')
+            fi
+            
+            # Check for authentication with token caching
+            local auth_header=""
+            
+            # Check for cached token first
+            local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
+            
+            if [ -n "$cached_token" ]; then
+                echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+                echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                read -r use_cached
+                
+                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                    auth_header="Authorization: token $cached_token"
+                    echo -e "${BLUE}Using cached token${NC}"
+                fi
+            fi
+            
+            # If no cached token or user declined, prompt for authentication
+            if [ -z "$auth_header" ]; then
+                echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
+                read -r use_auth
+                
+                if [[ $use_auth =~ ^[Yy]$ ]]; then
+                    echo -e "${GREEN}Enter your Forgejo API token:${NC}"
+                    echo -e "${BLUE}Generate one at: https://$forgejo_server/user/settings/applications${NC}"
+                    read -s API_TOKEN
+                    echo
+                    
+                    if [ -n "$API_TOKEN" ]; then
+                        auth_header="Authorization: token $API_TOKEN"
+                        save_token "forgejo" "$forgejo_server" "$API_TOKEN"
+                        echo -e "${GREEN}Token saved for future use${NC}"
+                    else
+                        echo -e "${RED}No token provided. Falling back to public access only.${NC}"
+                    fi
+                fi
+            fi
+            
+            echo -e "${PURPLE}Fetching issues from Forgejo...${NC}"
+            
+            # Extract owner and repo from repo_info
+            local owner=$(echo "$repo_info" | cut -d'/' -f1)
+            local repo=$(echo "$repo_info" | cut -d'/' -f2)
+            
+            # Construct API endpoint
+            local base_url="https://$forgejo_server"
+            local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
+            
+            # Add state filter
+            if [[ "$state" != "all" ]]; then
+                api_endpoint="$api_endpoint?state=$state"
+            fi
+            
+            # Fetch issues
+            if [ -n "$auth_header" ]; then
+                issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
+            else
+                issues_json=$(curl -s "$api_endpoint")
+            fi
+            
+            # Check if we got valid JSON
+            if ! echo "$issues_json" | jq . &>/dev/null; then
+                echo -e "${RED}Error: Failed to get valid JSON response from Forgejo API${NC}"
+                echo -e "${ORANGE}Response: $issues_json${NC}"
+                return 1
+            fi
+            ;;
         "1"|"gitea")
             # Extract Gitea server info
             local remote_url=$(git remote get-url origin 2>/dev/null)
@@ -3823,6 +4233,83 @@ save-issues() {
     local issues_json=""
     
     case "$platform" in
+        "forgejo")
+            # Extract Forgejo server info
+            local remote_url=$(git remote get-url origin 2>/dev/null)
+            local forgejo_server=""
+            local owner=$(echo "$repo_info" | cut -d'/' -f1)
+            local repo=$(echo "$repo_info" | cut -d'/' -f2)
+            repo="${repo%.git}"
+            
+            if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
+                forgejo_server="forge.ourworld.tf"
+            else
+                forgejo_server=$(echo "$remote_url" | sed -E 's|.*@([^:/]+)[:/].*|\1|' | sed -E 's|https?://([^/]+)/.*|\1|')
+            fi
+            
+            # Check for authentication with token caching
+            local auth_header=""
+            
+            # Check for cached token first
+            local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
+            
+            if [ -n "$cached_token" ]; then
+                echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+                echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                read -r use_cached
+                
+                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                    auth_header="Authorization: token $cached_token"
+                    echo -e "${BLUE}Using cached token${NC}"
+                fi
+            fi
+            
+            # If no cached token or user declined, prompt for authentication
+            if [ -z "$auth_header" ]; then
+                echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
+                read -r use_auth
+                
+                if [[ $use_auth =~ ^[Yy]$ ]]; then
+                    echo -e "${GREEN}Enter your Forgejo API token:${NC}"
+                    echo -e "${BLUE}Generate one at: https://$forgejo_server/user/settings/applications${NC}"
+                    read -s API_TOKEN
+                    echo
+                    
+                    if [ -n "$API_TOKEN" ]; then
+                        auth_header="Authorization: token $API_TOKEN"
+                        save_token "forgejo" "$forgejo_server" "$API_TOKEN"
+                        echo -e "${GREEN}Token saved for future use${NC}"
+                    else
+                        echo -e "${RED}No token provided. Falling back to public access only.${NC}"
+                    fi
+                fi
+            fi
+            
+            echo -e "${PURPLE}Fetching issues from Forgejo...${NC}"
+            
+            # Construct API endpoint
+            local base_url="https://$forgejo_server"
+            local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
+            
+            # Add state filter
+            if [[ "$state" != "all" ]]; then
+                api_endpoint="$api_endpoint?state=$state"
+            fi
+            
+            # Fetch issues
+            if [ -n "$auth_header" ]; then
+                issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
+            else
+                issues_json=$(curl -s "$api_endpoint")
+            fi
+            
+            # Check if we got valid JSON
+            if ! echo "$issues_json" | jq . &>/dev/null; then
+                echo -e "${RED}Error: Failed to get valid JSON response from Forgejo API${NC}"
+                echo -e "${ORANGE}Response: $issues_json${NC}"
+                return 1
+            fi
+            ;;
         "1"|"gitea")
             # Extract Gitea server info
             local remote_url=$(git remote get-url origin 2>/dev/null)
@@ -4244,13 +4731,13 @@ help() {
     echo -e "  ${GREEN}clone-all [URL|username]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user (interactive or with argument)"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
-    echo -e "                  ${BLUE}Note:${NC}    Supports: basic username, full URLs, and Gitea servers with --server option"
-    echo -e "                  ${BLUE}Note:${NC}    Options: --no-parallel, --max-concurrent N (default: 5)"
+    echo -e "                  ${BLUE}Platforms:${NC} Forgejo (forge.ourworld.tf), Gitea (git.ourworld.tf), GitHub"
+    echo -e "                  ${BLUE}Options:${NC} --no-parallel, --max-concurrent N (default: 5)"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all github.com/myusername"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all git.ourworld.tf/myorg --server git.ourworld.tf"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername --max-concurrent 10\n"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all forge.ourworld.tf/myorg"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all git.ourworld.tf/myorg\n"
     
     echo -e "  ${GREEN}clone-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user on selected platform"
@@ -4318,19 +4805,21 @@ help() {
 
     echo -e "  ${GREEN}login${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactive login to selected platform"
+    echo -e "                  ${BLUE}Platforms:${NC} Forgejo (forge.ourworld.tf), Gitea (git.ourworld.tf), GitHub"
     echo -e "                  ${BLUE}Example:${NC} gits login\n"
     
     echo -e "  ${GREEN}logout${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Logout from selected platform"
+    echo -e "                  ${BLUE}Platforms:${NC} Forgejo, Gitea, GitHub"
     echo -e "                  ${BLUE}Example:${NC} gits logout\n"
     
     echo -e "  ${GREEN}token <command> [server]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Manage cached API tokens"
-    echo -e "                  ${BLUE}Commands:${NC} clear, show, list"
+    echo -e "                  ${BLUE}Commands:${NC} list, show, clear"
     echo -e "                  ${BLUE}Note:${NC}    Tokens cached in ~/.config/gits/tokens.conf"
     echo -e "                  ${BLUE}Example:${NC} gits token list"
-    echo -e "                  ${BLUE}Example:${NC} gits token clear git.ourworld.tf"
-    echo -e "                  ${BLUE}Example:${NC} gits token show\n"
+    echo -e "                  ${BLUE}Example:${NC} gits token show forge.ourworld.tf"
+    echo -e "                  ${BLUE}Example:${NC} gits token clear forge.ourworld.tf\n"
     
     echo -e "  ${GREEN}install${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Install GitS globally"
