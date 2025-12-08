@@ -19,6 +19,7 @@
   - [Token Management](#token-management)
   - [Installation Management](#installation-management)
   - [Platform-Specific Features](#platform-specific-features)
+    - [Forgejo](#forgejo)
     - [Gitea](#gitea)
     - [GitHub](#github)
 - [Issues and Feature Requests](#issues-and-feature-requests)
@@ -35,8 +36,8 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Quick Pull**: Combines checkout, stash, fetch, pull, and status operations.
 - **Rapid Push**: Stages all changes, prompts for a commit message, commits, and pushes in one command.
 - **Easy Commit**: Quickly commit changes with a custom message.
-- **Pull Request Management**: Create, close, and merge PRs for both GitHub and Gitea.
-- **Platform Authentication**: Login and logout functionality for both GitHub and Gitea.
+- **Pull Request Management**: Create, close, and merge PRs for Forgejo, Gitea, and GitHub.
+- **Platform Authentication**: Login and logout functionality for Forgejo, Gitea, and GitHub.
 - **Issue Management**: Fetch and save issues from both public and private repositories with flexible authentication options.
 - **Branch Management**: Create, delete, and manage branches easily.
 - **Repository Initialization**: Initialize a new Git repository and push it to GitHub.
@@ -50,7 +51,7 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Easy Installation**: Simple install and uninstall process.
 - **User-Friendly**: Colorized output and helpful error messages.
 - **Repository Management**: Create and delete repositories on both GitHub and Gitea
-- **Multiple Platform Support**: Seamless integration with both GitHub and Gitea
+- **Multiple Platform Support**: Seamless integration with Forgejo, Gitea, and GitHub
 - **Branch Creation**: Create new branches with custom names
 - **Default Branch Handling**: Automatic detection and handling of default branches
 - **Force Delete Options**: Safe branch deletion with force delete capabilities
@@ -443,6 +444,27 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
 - `gits help` - Display detailed help information
 
 ### Platform-Specific Features
+
+#### Forgejo
+- Default server: forge.ourworld.tf
+- API-compatible with Gitea (uses same API endpoints)
+- Token-based authentication (no CLI required)
+- **API Token Generation:**
+  1. Navigate to your Forgejo instance (e.g., https://forge.ourworld.tf)
+  2. Go to Settings → Applications → Generate New Token
+  3. Give it a descriptive name (e.g., "GitS CLI")
+  4. Select scopes: `repo` (for repository access)
+  5. Copy the generated token (you won't see it again)
+  6. Use `gits login` and select Forgejo to save your token
+- **Token Management:**
+  - View cached tokens: `gits token list`
+  - Clear cached token: `gits token clear forge.ourworld.tf`
+  - Tokens stored in: `~/.config/gits/tokens.conf` (secure, 600 permissions)
+- **Supported Operations:**
+  - `gits clone-all forge.ourworld.tf/username` - Clone all repositories
+  - `gits fetch-issues` - Fetch issues from Forgejo repositories
+  - `gits save-issues` - Save issues to local files
+  - `gits pr create/close/merge` - PR management (via tea CLI)
 
 #### Gitea
 - Default server: git.ourworld.tf

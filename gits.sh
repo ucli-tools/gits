@@ -2534,8 +2534,8 @@ get_repo_info() {
 get_latest_pr_number() {
     local platform_choice=$(detect_platform)
     
-    if [ "$platform_choice" = "gitea" ]; then
-        # Gitea - use tea
+    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
+        # Gitea/Forgejo - use tea (Forgejo is API-compatible with Gitea)
         tea pr list --output simple 2>/dev/null | head -n 1 | awk '{print $1}' | sed 's/#//'
     else
         # GitHub - use gh
@@ -2548,8 +2548,8 @@ pr() {
     if [ -z "$1" ]; then
         echo -e "${RED}Error: Please specify an action (create/close/merge)${NC}"
         echo -e "Usage: gits pr <create|close|merge> [options]"
-        echo -e "  create --title 'Title' --base main --head feature --body 'Description' [--platform github|gitea]"
-        echo -e "  merge --pr-number 123 [--platform github|gitea]"
+        echo -e "  create --title 'Title' --base main --head feature --body 'Description' [--platform forgejo|gitea|github]"
+        echo -e "  merge --pr-number 123 [--platform forgejo|gitea|github]"
         return 1
     fi
 
@@ -2563,10 +2563,12 @@ pr() {
     for i in "${!args[@]}"; do
         if [[ "${args[i]}" == "--platform" ]]; then
             local platform_val="${args[i+1]}"
-            if [[ "$platform_val" == "gitea" ]]; then
-                platform_choice="1"
+            if [[ "$platform_val" == "forgejo" ]]; then
+                platform_choice="forgejo"
+            elif [[ "$platform_val" == "gitea" ]]; then
+                platform_choice="gitea"
             elif [[ "$platform_val" == "github" ]]; then
-                platform_choice="2"
+                platform_choice="github"
             fi
             # Remove platform args from array
             unset 'args[i]' 'args[i+1]'
@@ -2644,8 +2646,8 @@ pr_create() {
         esac
     done
 
-    if [ "$platform_choice" = "1" ]; then
-        # Gitea PR creation
+    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
+        # Gitea/Forgejo PR creation (Forgejo is API-compatible with Gitea)
         if [ "$interactive" = "true" ]; then
             # Show current PRs
             echo -e "${BLUE}Current Pull Requests:${NC}"
@@ -2797,8 +2799,8 @@ pr_create() {
 pr_close() {
     local platform_choice=$1
 
-    if [ "$platform_choice" = "1" ]; then
-        # Show current PRs
+    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
+        # Show current PRs (Forgejo is API-compatible with Gitea)
         echo -e "${BLUE}Current Pull Requests:${NC}"
         tea pr
 
@@ -2865,8 +2867,8 @@ pr_merge() {
         esac
     done
 
-    if [ "$platform_choice" = "1" ]; then
-        # Gitea PR merge
+    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
+        # Gitea/Forgejo PR merge (Forgejo is API-compatible with Gitea)
         if [ "$interactive" = "true" ]; then
             # Show current PRs
             echo -e "${BLUE}Current Pull Requests:${NC}"
@@ -4464,8 +4466,8 @@ save-issues() {
         # Fetch comments for this issue (platform-specific)
         local comments_json=""
         case "$platform" in
-            "1"|"gitea")
-                # Use Gitea issues comments API
+            "forgejo"|"gitea")
+                # Use Gitea/Forgejo issues comments API
                 local comments_endpoint="$base_url/api/v1/repos/$owner/$repo/issues/$issue_number/comments"
                 if [ -n "$auth_header" ]; then
                     comments_json=$(curl -s -H "$auth_header" "$comments_endpoint")
@@ -4473,7 +4475,7 @@ save-issues() {
                     comments_json=$(curl -s "$comments_endpoint")
                 fi
                 ;;
-            "2"|"github"|*)
+            "github"|*)
                 # Use gh CLI to get comments for GitHub issues
                 if command -v gh &> /dev/null; then
                     comments_json=$(gh issue view "$issue_number" --json comments --jq '.comments' 2>/dev/null)
