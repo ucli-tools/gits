@@ -4437,6 +4437,82 @@ fetch-issues() {
     
     echo -e "\n${GREEN}Issues fetched successfully${NC}"
 }
+fetch-issues-all() {
+    local state="open"
+    local format="display"
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --state)
+                state="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits fetch-issues-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Fetch issues from all repositories in current directory tree${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
+                echo -e "  --format FORMAT  Output format: display, json (default: display)"
+                echo -e "  -h, --help       Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits fetch-issues-all"
+                echo -e "  gits fetch-issues-all --state all --format json"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits fetch-issues-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Fetching issues from all repositories...${NC}"
+    echo -e ""
+    
+    local repos=()
+    while IFS= read -r -d '' gitdir; do
+        repos+=("$(dirname "$gitdir")")
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        echo -e "${ORANGE}No git repositories found in current directory.${NC}"
+        return 0
+    fi
+    
+    local total_repos=${#repos[@]}
+    local success_count=0
+    local failed_count=0
+    
+    for repodir in "${repos[@]}"; do
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📁 Repository: $repodir${NC}"
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        
+        if ( cd "$repodir" && fetch-issues --state "$state" --format "$format" ); then
+            ((success_count++))
+        else
+            ((failed_count++))
+            echo -e "${RED}Failed to fetch issues for $repodir${NC}"
+        fi
+        
+        echo -e ""
+    done
+    
+    echo -e "${PURPLE}Summary:${NC}"
+    echo -e "  Total repositories: $total_repos"
+    echo -e "  ${GREEN}Successful: $success_count${NC}"
+    if [[ "$failed_count" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed_count${NC}"
+    fi
+}
 
 # Function to save issues to files
 save-issues() {
@@ -4915,6 +4991,82 @@ EOF
     
     echo -e "\n${GREEN}Successfully saved $saved_count issues to $output_dir${NC}"
 }
+save-issues-all() {
+    local state="open"
+    local format="markdown"
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --state)
+                state="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits save-issues-all [OPTIONS]${NC}"
+                echo -e "${BLUE}Save issues from all repositories to per-repository files${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
+                echo -e "  --format FORMAT  Output format: markdown, json, plain (default: markdown)"
+                echo -e "  -h, --help       Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits save-issues-all"
+                echo -e "  gits save-issues-all --state all --format json"
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits save-issues-all --help' for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    echo -e "${GREEN}Saving issues for all repositories...${NC}"
+    echo -e ""
+    
+    local repos=()
+    while IFS= read -r -d '' gitdir; do
+        repos+=("$(dirname "$gitdir")")
+    done < <(find . -name .git -type d -print0)
+    
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        echo -e "${ORANGE}No git repositories found in current directory.${NC}"
+        return 0
+    fi
+    
+    local total_repos=${#repos[@]}
+    local success_count=0
+    local failed_count=0
+    
+    for repodir in "${repos[@]}"; do
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📁 Repository: $repodir${NC}"
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        
+        if ( cd "$repodir" && save-issues --state "$state" --format "$format" ); then
+            ((success_count++))
+        else
+            ((failed_count++))
+            echo -e "${RED}Failed to save issues for $repodir${NC}"
+        fi
+        
+        echo -e ""
+    done
+    
+    echo -e "${PURPLE}Summary:${NC}"
+    echo -e "  Total repositories: $total_repos"
+    echo -e "  ${GREEN}Successful: $success_count${NC}"
+    if [[ "$failed_count" -gt 0 ]]; then
+        echo -e "  ${RED}Failed: $failed_count${NC}"
+    fi
+}
 
 help() {
     echo -e "\n${ORANGE}═══════════════════════════════════════════${NC}"
@@ -5037,12 +5189,25 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --state all --format json\n"
     
+    echo -e "  ${GREEN}fetch-issues-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Fetch issues from all repositories in directory tree"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json)"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all --state all --format json\n"
+    
     echo -e "  ${GREEN}save-issues${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Save issues to files in organized directory structure"
     echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain)"
     echo -e "                  ${BLUE}Output:${NC} ./repo-name-issues/ directory with individual issue files"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown\n"
+    
+    echo -e "  ${GREEN}save-issues-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Save issues for all repositories to per-repository directories"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain)"
+    echo -e "                  ${BLUE}Output:${NC} ./owner-repo-issues/ directories inside each repository"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues-all"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues-all --state all --format json\n"
     
     echo -e "  ${GREEN}list-all${NC}"
     echo -e "                  ${BLUE}Actions:${NC} List repositories with current branch and simple status flags"
@@ -5224,6 +5389,14 @@ main() {
         save-issues)
             shift
             save-issues "$@"
+            ;;
+        fetch-issues-all)
+            shift
+            fetch-issues-all "$@"
+            ;;
+        save-issues-all)
+            shift
+            save-issues-all "$@"
             ;;
         status-all)
             shift

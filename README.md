@@ -370,6 +370,21 @@ After installation, you can use GitS with the following commands:
     # - Choose "2" to provide API token manually
     ```
 
+- `gits fetch-issues-all [OPTIONS]` - Fetch and display issues from **all repositories under the current directory tree**
+  - Uses the same platform detection and authentication as `gits fetch-issues`
+  - Iterates over each git repository (found via `.git` directories) and runs `gits fetch-issues` inside it
+  - **Options:**
+    - `--state STATE` - Filter by state: open, closed, all (default: open)
+    - `--format FORMAT` - Output format: display, json (default: display)
+  - **Examples:**
+    ```bash
+    # Fetch open issues for all repositories under the current directory
+    gits fetch-issues-all
+
+    # Fetch all issues in JSON format across all repositories
+    gits fetch-issues-all --state all --format json
+    ```
+
 - `gits save-issues [OPTIONS]` - Save issues to files in organized directory
   - Supports both public and private repositories
   - **Authentication Methods:**
