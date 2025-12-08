@@ -67,11 +67,13 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 To use GitS, you need:
 
 - [git](https://git-scm.com/) - Required for all git operations
+- [jq](https://stedolan.github.io/jq/) - Required for JSON parsing (Forgejo API)
+- [curl](https://curl.se/) - Required for API calls (Forgejo)
 - [gh](https://cli.github.com/) - Required for GitHub PR management and authentication
 - [tea](https://gitea.com/gitea/tea) - Required for Gitea PR management and authentication
 - Makefile (optional)
 
-Both `gh` and `tea` are only required if you plan to use their respective platform features.
+**Note:** `gh` and `tea` are only required for their respective platforms (GitHub and Gitea). Forgejo uses native API calls via `curl` and `jq`, so no additional CLI tools are needed for Forgejo.
 
 ## Installation
 
@@ -447,13 +449,13 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
 
 #### Forgejo
 - Default server: forge.ourworld.tf
-- API-compatible with Gitea (uses same API endpoints)
-- Token-based authentication (no CLI required)
+- Native API integration (no external CLI required)
+- Token-based authentication
 - **API Token Generation:**
   1. Navigate to your Forgejo instance (e.g., https://forge.ourworld.tf)
   2. Go to Settings → Applications → Generate New Token
   3. Give it a descriptive name (e.g., "GitS CLI")
-  4. Select scopes: `repo` (for repository access)
+  4. Select scopes: `repo` (for full repository access including PRs)
   5. Copy the generated token (you won't see it again)
   6. Use `gits login` and select Forgejo to save your token
 - **Token Management:**
@@ -464,7 +466,10 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
   - `gits clone-all forge.ourworld.tf/username` - Clone all repositories
   - `gits fetch-issues` - Fetch issues from Forgejo repositories
   - `gits save-issues` - Save issues to local files
-  - `gits pr create/close/merge` - PR management (via tea CLI)
+  - `gits pr create` - Create pull requests via native API
+  - `gits pr merge --pr-number N` - Merge pull requests via native API
+  - `gits pr close` - Close pull requests via native API
+  - `gits pr-latest` - Get the latest PR number
 
 #### Gitea
 - Default server: git.ourworld.tf

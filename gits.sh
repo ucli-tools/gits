@@ -2534,8 +2534,36 @@ get_repo_info() {
 get_latest_pr_number() {
     local platform_choice=$(detect_platform)
     
-    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
-        # Gitea/Forgejo - use tea (Forgejo is API-compatible with Gitea)
+    if [ "$platform_choice" = "forgejo" ]; then
+        # Forgejo - use API
+        local remote_url=$(git remote get-url origin)
+        local server_url=""
+        local repo_path=""
+        
+        # Check ssh:// first since it also contains "git@"
+        if [[ $remote_url == ssh://* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|ssh://git@([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed -E 's|ssh://git@[^/]+/||; s|\.git$||')
+        elif [[ $remote_url == *"git@"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's/git@([^:]+):.*/\1/')
+            repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+        elif [[ $remote_url == *"https://"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+        fi
+        
+        [ -z "$server_url" ] && server_url="forge.ourworld.tf"
+        local target_org=$(echo "$repo_path" | cut -d'/' -f1)
+        local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
+        
+        local auth_token=$(get_cached_token "forgejo" "$server_url")
+        if [ -n "$auth_token" ]; then
+            curl -s -H "Authorization: token $auth_token" \
+                "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls?state=open&limit=1" \
+                | jq -r '.[0].number // empty' 2>/dev/null
+        fi
+    elif [ "$platform_choice" = "gitea" ]; then
+        # Gitea - use tea
         tea pr list --output simple 2>/dev/null | head -n 1 | awk '{print $1}' | sed 's/#//'
     else
         # GitHub - use gh
@@ -2580,7 +2608,7 @@ pr() {
     if [ -z "$platform_choice" ]; then
         platform_choice=$(detect_platform)
     fi
-
+    
     case "$action" in
         create)
             pr_create "$platform_choice" "${args[@]}"
@@ -2646,8 +2674,102 @@ pr_create() {
         esac
     done
 
-    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
-        # Gitea/Forgejo PR creation (Forgejo is API-compatible with Gitea)
+    if [ "$platform_choice" = "forgejo" ]; then
+        # Forgejo PR creation using API directly
+        local remote_url=$(git remote get-url origin)
+        local server_url=""
+        local repo_path=""
+        
+        # Extract server and repo path from remote URL
+        # Check ssh:// first since it also contains "git@"
+        if [[ $remote_url == ssh://* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|ssh://git@([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed -E 's|ssh://git@[^/]+/||; s|\.git$||')
+        elif [[ $remote_url == *"git@"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's/git@([^:]+):.*/\1/')
+            repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+        elif [[ $remote_url == *"https://"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+        fi
+        
+        if [ -z "$server_url" ]; then
+            server_url="forge.ourworld.tf"
+        fi
+        
+        target_org=$(echo "$repo_path" | cut -d'/' -f1)
+        target_repo=$(echo "$repo_path" | cut -d'/' -f2)
+        
+        if [ "$interactive" = "true" ]; then
+            echo -e "${GREEN}Enter Pull Request title:${NC}"
+            read title
+
+            echo -e "${GREEN}Enter base branch (default: main):${NC}"
+            read base
+            base=${base:-main}
+
+            echo -e "${GREEN}Enter head branch (default: current branch):${NC}"
+            read head
+            [ -z "$head" ] && head=$(git branch --show-current 2>/dev/null)
+
+            echo -e "${GREEN}Enter PR description (optional):${NC}"
+            read description
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$title" ]; then
+                echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
+                return 1
+            fi
+            
+            # Auto-detect current branch if --head not provided
+            if [ -z "$head" ]; then
+                head=$(git branch --show-current 2>/dev/null)
+                if [ -z "$head" ]; then
+                    echo -e "${RED}Error: Could not detect current branch. Please specify --head${NC}"
+                    return 1
+                fi
+            fi
+        fi
+        
+        # Get cached token
+        local auth_token=$(get_cached_token "forgejo" "$server_url")
+        if [ -z "$auth_token" ]; then
+            echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
+            return 1
+        fi
+        
+        echo -e "\n${PURPLE}Creating Pull Request on $server_url...${NC}"
+        echo -e "${BLUE}Repository: $target_org/$target_repo${NC}"
+        echo -e "${BLUE}Base: $base <- Head: $head${NC}"
+        
+        # Create PR using Forgejo API
+        local api_url="https://$server_url/api/v1/repos/$target_org/$target_repo/pulls"
+        local pr_data=$(jq -n \
+            --arg title "$title" \
+            --arg body "${description:-}" \
+            --arg head "$head" \
+            --arg base "$base" \
+            '{title: $title, body: $body, head: $head, base: $base}')
+        
+        local response=$(curl -s -X POST \
+            -H "Authorization: token $auth_token" \
+            -H "Content-Type: application/json" \
+            -d "$pr_data" \
+            "$api_url")
+        
+        # Check response
+        if echo "$response" | jq -e '.number' &>/dev/null; then
+            local pr_number=$(echo "$response" | jq -r '.number')
+            local pr_url=$(echo "$response" | jq -r '.html_url')
+            echo -e "${GREEN}Successfully created PR #$pr_number${NC}"
+            echo -e "${BLUE}URL: $pr_url${NC}"
+        else
+            local error_msg=$(echo "$response" | jq -r '.message // "Unknown error"')
+            echo -e "${RED}Failed to create PR: $error_msg${NC}"
+            return 1
+        fi
+    elif [ "$platform_choice" = "gitea" ]; then
+        # Gitea PR creation using tea CLI
         if [ "$interactive" = "true" ]; then
             # Show current PRs
             echo -e "${BLUE}Current Pull Requests:${NC}"
@@ -2799,8 +2921,63 @@ pr_create() {
 pr_close() {
     local platform_choice=$1
 
-    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
-        # Show current PRs (Forgejo is API-compatible with Gitea)
+    if [ "$platform_choice" = "forgejo" ]; then
+        # Forgejo PR close using API
+        local remote_url=$(git remote get-url origin)
+        local server_url=""
+        local repo_path=""
+        
+        # Extract server and repo path from remote URL
+        # Check ssh:// first since it also contains "git@"
+        if [[ $remote_url == ssh://* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|ssh://git@([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed -E 's|ssh://git@[^/]+/||; s|\.git$||')
+        elif [[ $remote_url == *"git@"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's/git@([^:]+):.*/\1/')
+            repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+        elif [[ $remote_url == *"https://"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+        fi
+        
+        [ -z "$server_url" ] && server_url="forge.ourworld.tf"
+        local target_org=$(echo "$repo_path" | cut -d'/' -f1)
+        local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
+        
+        # Get cached token
+        local auth_token=$(get_cached_token "forgejo" "$server_url")
+        if [ -z "$auth_token" ]; then
+            echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
+            return 1
+        fi
+        
+        # List open PRs
+        echo -e "${BLUE}Open Pull Requests:${NC}"
+        local prs=$(curl -s -H "Authorization: token $auth_token" \
+            "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls?state=open")
+        echo "$prs" | jq -r '.[] | "#\(.number) - \(.title) (\(.user.login))"' 2>/dev/null || echo "No open PRs"
+        
+        echo -e "\n${GREEN}Enter PR number to close:${NC}"
+        read pr_number
+
+        echo -e "\n${PURPLE}Closing Pull Request #$pr_number...${NC}"
+        
+        # Close PR using API (update state to closed)
+        local response=$(curl -s -X PATCH \
+            -H "Authorization: token $auth_token" \
+            -H "Content-Type: application/json" \
+            -d '{"state": "closed"}' \
+            "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number")
+        
+        if echo "$response" | jq -e '.number' &>/dev/null; then
+            echo -e "${GREEN}Successfully closed PR #$pr_number${NC}"
+        else
+            local error_msg=$(echo "$response" | jq -r '.message // "Unknown error"')
+            echo -e "${RED}Failed to close PR: $error_msg${NC}"
+            return 1
+        fi
+    elif [ "$platform_choice" = "gitea" ]; then
+        # Gitea PR close using tea CLI
         echo -e "${BLUE}Current Pull Requests:${NC}"
         tea pr
 
@@ -2813,7 +2990,7 @@ pr_close() {
         echo -e "\n${PURPLE}Closing Pull Request #$pr_number...${NC}"
         tea pr close "$pr_number" --repo "$repo"
     else
-        # Show current PRs
+        # GitHub PR close
         echo -e "${BLUE}Current Pull Requests:${NC}"
         gh pr list
 
@@ -2867,8 +3044,106 @@ pr_merge() {
         esac
     done
 
-    if [ "$platform_choice" = "gitea" ] || [ "$platform_choice" = "forgejo" ]; then
-        # Gitea/Forgejo PR merge (Forgejo is API-compatible with Gitea)
+    if [ "$platform_choice" = "forgejo" ]; then
+        # Forgejo PR merge using API
+        local remote_url=$(git remote get-url origin)
+        local server_url=""
+        local repo_path=""
+        
+        # Extract server and repo path from remote URL
+        # Check ssh:// first since it also contains "git@"
+        if [[ $remote_url == ssh://* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|ssh://git@([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed -E 's|ssh://git@[^/]+/||; s|\.git$||')
+        elif [[ $remote_url == *"git@"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's/git@([^:]+):.*/\1/')
+            repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
+        elif [[ $remote_url == *"https://"* ]]; then
+            server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
+            repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
+        fi
+        
+        [ -z "$server_url" ] && server_url="forge.ourworld.tf"
+        local target_org=$(echo "$repo_path" | cut -d'/' -f1)
+        local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
+        
+        # Get cached token
+        local auth_token=$(get_cached_token "forgejo" "$server_url")
+        if [ -z "$auth_token" ]; then
+            echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
+            return 1
+        fi
+        
+        if [ "$interactive" = "true" ]; then
+            # List open PRs
+            echo -e "${BLUE}Open Pull Requests:${NC}"
+            local prs=$(curl -s -H "Authorization: token $auth_token" \
+                "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls?state=open")
+            echo "$prs" | jq -r '.[] | "#\(.number) - \(.title) (\(.head.ref) -> \(.base.ref))"' 2>/dev/null || echo "No open PRs"
+
+            echo -e "\n${GREEN}Enter PR number to merge:${NC}"
+            read pr_number
+        else
+            # Validate required parameters for non-interactive mode
+            if [ -z "$pr_number" ]; then
+                echo -e "${RED}Error: --pr-number is required for non-interactive mode${NC}"
+                return 1
+            fi
+        fi
+
+        echo -e "\n${PURPLE}Merging Pull Request #$pr_number...${NC}"
+        
+        # Get PR details first to know the branch name
+        local pr_details=$(curl -s -H "Authorization: token $auth_token" \
+            "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number")
+        local head_branch=$(echo "$pr_details" | jq -r '.head.ref')
+        
+        # Merge PR using API
+        local merge_data=$(jq -n \
+            --arg style "merge" \
+            '{Do: $style, delete_branch_after_merge: true}')
+        
+        local response=$(curl -s -X POST \
+            -H "Authorization: token $auth_token" \
+            -H "Content-Type: application/json" \
+            -d "$merge_data" \
+            "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number/merge")
+        
+        # Check if merge was successful (empty response means success for this endpoint)
+        if [ -z "$response" ] || echo "$response" | jq -e 'has("sha")' &>/dev/null 2>&1; then
+            echo -e "${GREEN}Successfully merged PR #$pr_number${NC}"
+            
+            # Handle local branch deletion
+            if [ "$interactive" = "true" ] && [ -z "$delete_branch" ]; then
+                echo -e "\n${GREEN}Would you like to delete the branch locally? (y/n)${NC}"
+                read delete_branch
+            fi
+
+            if [[ $delete_branch == "y" ]]; then
+                branch_name="${branch_name:-$head_branch}"
+                if [ -n "$branch_name" ]; then
+                    # Get the default branch
+                    local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+                    [ -z "$default_branch" ] && default_branch="main"
+                    
+                    # Switch to the default branch first
+                    if git checkout "$default_branch" 2>/dev/null; then
+                        git pull
+                        if git branch -d "$branch_name" 2>/dev/null; then
+                            echo -e "${PURPLE}Branch '$branch_name' deleted locally.${NC}"
+                        else
+                            echo -e "${ORANGE}Branch '$branch_name' not found locally or has unmerged changes.${NC}"
+                        fi
+                    fi
+                fi
+            fi
+        else
+            local error_msg=$(echo "$response" | jq -r '.message // "Unknown error"')
+            echo -e "${RED}Failed to merge PR: $error_msg${NC}"
+            return 1
+        fi
+    elif [ "$platform_choice" = "gitea" ]; then
+        # Gitea PR merge using tea CLI
         if [ "$interactive" = "true" ]; then
             # Show current PRs
             echo -e "${BLUE}Current Pull Requests:${NC}"
