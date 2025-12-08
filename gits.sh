@@ -2201,6 +2201,12 @@ clone-all() {
                 ssh_url=$(echo "$repo" | jq -r '.sshUrl // .ssh_url')
                 is_archived=$(echo "$repo" | jq -r '.isArchived // .archived // false')
                 ;;
+            forgejo)
+                repo_name=$(echo "$repo" | jq -r '.name')
+                clone_url=$(echo "$repo" | jq -r '.clone_url // .http_url')
+                ssh_url=$(echo "$repo" | jq -r '.ssh_url // .git_url')
+                is_archived=$(echo "$repo" | jq -r '.archived // false')
+                ;;
             gitea)
                 repo_name=$(echo "$repo" | jq -r '.name')
                 clone_url=$(echo "$repo" | jq -r '.clone_url // .http_url')
@@ -2249,6 +2255,9 @@ clone-all() {
             case "$platform" in
                 github)
                     ssh_url="git@github.com:$username/$repo_name.git"
+                    ;;
+                forgejo)
+                    ssh_url="git@$server_url:$username/$repo_name.git"
                     ;;
                 gitea)
                     ssh_url="git@$gitea_server:$username/$repo_name.git"
