@@ -4239,18 +4239,23 @@ fetch-issues() {
             local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
             
             if [ -n "$cached_token" ]; then
-                echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
-                echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                read -r use_cached
-                
-                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token${NC}"
+                    echo -e "${BLUE}Using cached token for $forgejo_server (non-interactive)${NC}"
+                else
+                    echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ $use_cached =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
                 fi
             fi
             
-            # If no cached token or user declined, prompt for authentication
-            if [ -z "$auth_header" ]; then
+            # If no cached token or user declined, prompt for authentication (interactive mode only)
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
                 
@@ -4320,18 +4325,23 @@ fetch-issues() {
             local cached_token=$(get_cached_gitea_token "$gitea_server")
             
             if [ -n "$cached_token" ]; then
-                echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
-                echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                read -r use_cached
-                
-                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token${NC}"
+                    echo -e "${BLUE}Using cached token for $gitea_server (non-interactive)${NC}"
+                else
+                    echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ $use_cached =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
                 fi
             fi
             
-            # If no cached token or user declined, prompt for authentication
-            if [ -z "$auth_header" ]; then
+            # If no cached token or user declined, prompt for authentication (interactive mode only)
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
                 
@@ -4496,7 +4506,7 @@ fetch-issues-all() {
         echo -e "${BLUE}📁 Repository: $repodir${NC}"
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         
-        if ( cd "$repodir" && fetch-issues --state "$state" --format "$format" ); then
+        if ( cd "$repodir" && GITS_ISSUES_NONINTERACTIVE=1 fetch-issues --state "$state" --format "$format" ); then
             ((success_count++))
         else
             ((failed_count++))
@@ -4616,18 +4626,23 @@ save-issues() {
             local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
             
             if [ -n "$cached_token" ]; then
-                echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
-                echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                read -r use_cached
-                
-                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token${NC}"
+                    echo -e "${BLUE}Using cached token for $forgejo_server (non-interactive)${NC}"
+                else
+                    echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ $use_cached =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
                 fi
             fi
             
-            # If no cached token or user declined, prompt for authentication
-            if [ -z "$auth_header" ]; then
+            # If no cached token or user declined, prompt for authentication (interactive mode only)
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
                 
@@ -4688,18 +4703,23 @@ save-issues() {
             local cached_token=$(get_cached_gitea_token "$gitea_server")
             
             if [ -n "$cached_token" ]; then
-                echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
-                echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                read -r use_cached
-                
-                if [[ $use_cached =~ ^[Yy]$ ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token${NC}"
+                    echo -e "${BLUE}Using cached token for $gitea_server (non-interactive)${NC}"
+                else
+                    echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
+                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                    read -r use_cached
+                    
+                    if [[ $use_cached =~ ^[Yy]$ ]]; then
+                        auth_header="Authorization: token $cached_token"
+                        echo -e "${BLUE}Using cached token${NC}"
+                    fi
                 fi
             fi
             
-            # If no cached token or user declined, prompt for authentication
-            if [ -z "$auth_header" ]; then
+            # If no cached token or user declined, prompt for authentication (interactive mode only)
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
                 
@@ -5050,7 +5070,7 @@ save-issues-all() {
         echo -e "${BLUE}📁 Repository: $repodir${NC}"
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         
-        if ( cd "$repodir" && save-issues --state "$state" --format "$format" ); then
+        if ( cd "$repodir" && GITS_ISSUES_NONINTERACTIVE=1 save-issues --state "$state" --format "$format" ); then
             ((success_count++))
         else
             ((failed_count++))
