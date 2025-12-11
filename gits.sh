@@ -477,6 +477,11 @@ push-all() {
         
         local status_output=$(git status --porcelain 2>/dev/null)
         local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+
+        # Ensure unpushed is numeric to avoid arithmetic errors
+        if ! [[ "$unpushed" =~ ^[0-9]+$ ]]; then
+            unpushed=0
+        fi
         
         if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
             dirty_repos+=("$repodir")
@@ -522,6 +527,11 @@ push-all() {
         local info="${repo_info[i]}"
         local status_output=$(echo "$info" | cut -d'|' -f1)
         local unpushed=$(echo "$info" | cut -d'|' -f2)
+
+        # Defensive: ensure unpushed is numeric even if parsing went wrong
+        if ! [[ "$unpushed" =~ ^[0-9]+$ ]]; then
+            unpushed=0
+        fi
         
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         echo -e "${BLUE}📁 Repository: $repodir${NC} ($((i+1))/${#dirty_repos[@]})"
