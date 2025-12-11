@@ -40,7 +40,7 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Platform Authentication**: Login and logout functionality for Forgejo, Gitea, and GitHub.
 - **Issue Management**: Fetch and save issues from both public and private repositories with flexible authentication options.
 - **Branch Management**: Create, delete, and manage branches easily.
-- **Repository Initialization**: Initialize a new Git repository and push it to GitHub.
+- **Repository Initialization**: Initialize a new Git repository and push it to Forgejo, Gitea, or GitHub.
 - **Commit Management**: Revert to previous commits and undo reverts.
 - **Repository Cloning**: Easily clone repositories and switch to their directory.
 - **Batch Repository Operations**: Clone, push, fetch, pull, and check status across multiple repositories simultaneously.
@@ -50,7 +50,7 @@ GitS is a bash script designed to streamline the git workflow by combining commo
 - **Organization Repository Support**: Smart detection and cloning of organization repositories.
 - **Easy Installation**: Simple install and uninstall process.
 - **User-Friendly**: Colorized output and helpful error messages.
-- **Repository Management**: Create and delete repositories on both GitHub and Gitea
+- **Repository Management**: Create and delete repositories on Forgejo, Gitea, and GitHub
 - **Multiple Platform Support**: Seamless integration with Forgejo, Gitea, and GitHub
 - **Branch Creation**: Create new branches with custom names
 - **Default Branch Handling**: Automatic detection and handling of default branches
@@ -92,26 +92,26 @@ This will copy the script to `/usr/local/bin/gits`, making it accessible system-
 After installation, you can use GitS with the following commands:
 
 ### Authentication
-- `gits login` - Login to GitHub or Gitea
-- `gits logout` - Logout from GitHub or Gitea
+- `gits login` - Login to Forgejo, Gitea, or GitHub (supports custom Forgejo hosts)
+- `gits logout` - Logout from Forgejo, Gitea, or GitHub
 
 ### Repository Management
 - `gits repo create` - Create a new repository
   - Interactive prompts for:
-    - Platform selection (GitHub/Gitea)
+    - Platform selection (Forgejo/Gitea/GitHub)
     - Repository name
     - Description
     - Privacy settings
 - `gits repo delete` - Delete an existing repository
   - Interactive prompts for:
-    - Platform selection
+    - Platform selection (Forgejo/Gitea/GitHub)
     - Repository name
     - Confirmation
 
 ### Repository Setup
 - `gits init` - Initialize a new Git repository
-  - Platform selection (GitHub/Gitea)
-  - Default branch configuration
+  - Platform selection (Forgejo/Gitea/GitHub, with custom self-hosted option)
+  - Default branch: `main` for all platforms (can be overridden interactively)
   - Initial commit setup
   - Remote repository linking
 - `gits clone <repo>` - Clone a repository
@@ -121,7 +121,7 @@ After installation, you can use GitS with the following commands:
 ### Batch Repository Operations
 - `gits clone-all [URL|username] [OPTIONS]` - Clone all repositories from a user or organization
   - **Smart Organization Detection**: Automatically detects organization vs user from URL format
-  - **Multiple Platform Support**: GitHub and Gitea with intelligent endpoint selection
+  - **Multiple Platform Support**: Forgejo, Gitea, and GitHub with intelligent endpoint selection
   - **Parallel Cloning**: Configurable concurrent repository cloning (default: 5 concurrent)
   - **Enhanced Authentication**: Supports cached tokens and multiple authentication methods
   - **Cross-platform Field Mapping**: Handles GitHub (`cloneUrl`, `sshUrl`) and Gitea (`clone_url`, `ssh_url`) field differences
@@ -137,6 +137,9 @@ After installation, you can use GitS with the following commands:
     
     # Clone repositories from a Gitea organization with custom server
     gits clone-all git.ourworld.tf/myorg --server git.ourworld.tf
+    
+    # Clone repositories from a Forgejo organization (interactive platform selection)
+    gits clone-all forge.ourworld.tf/myorg
     
     # Clone with parallel processing (faster for many repositories)
     gits clone-all myusername --max-concurrent 10
@@ -488,7 +491,7 @@ For GitHub repositories, authentication is automatic via `gh` CLI (if logged in 
 
 #### Gitea
 - Default server: git.ourworld.tf
-- Default branch: development
+- Default branch: main
 - Custom merge commit messages
 - Manual branch cleanup options
 - **API Token Generation:**

@@ -1655,32 +1655,64 @@ clone-all() {
         echo -e "${GREEN}Which platform would you like to use?${NC}"
         echo -e "1) Forgejo (forge.ourworld.tf)"
         echo -e "2) Gitea (git.ourworld.tf)"
-        echo -e "3) GitHub"
-        read -p "Enter your choice (1/2/3): " platform_choice
-        
+        echo -e "3) GitHub (github.com)"
+        echo -e "4) Custom (self-hosted Forgejo/Gitea)"
+        read -p "Enter your choice (1/2/3/4): " platform_choice
+
         case "$platform_choice" in
-            1) platform="forgejo" ;;
-            2) platform="gitea" ;;
-            3) platform="github" ;;
+            1)
+                platform="forgejo"
+                server_url="forge.ourworld.tf"
+                ;;
+            2)
+                platform="gitea"
+                gitea_server="git.ourworld.tf"
+                ;;
+            3)
+                platform="github"
+                ;;
+            4)
+                echo -e "${GREEN}Is your custom host:${NC}"
+                echo -e "1) Forgejo"
+                echo -e "2) Gitea"
+                read -p "Enter your choice (1/2): " custom_choice
+
+                case "$custom_choice" in
+                    1)
+                        platform="forgejo"
+                        ;;
+                    2)
+                        platform="gitea"
+                        ;;
+                    *)
+                        echo -e "${ORANGE}Invalid choice. Defaulting to Forgejo.${NC}"
+                        platform="forgejo"
+                        ;;
+                esac
+
+                echo -e "${GREEN}Enter server URL (e.g. forge.example.com or https://forge.example.com):${NC}"
+                read -r custom_server
+                if [ -z "$custom_server" ]; then
+                    echo -e "${RED}Error: Server URL cannot be empty.${NC}"
+                    return 1
+                fi
+                custom_server=$(echo "$custom_server" | sed -E 's|^https?://||' | sed 's|/$||')
+
+                if [[ "$platform" == "forgejo" ]]; then
+                    server_url="$custom_server"
+                else
+                    gitea_server="$custom_server"
+                fi
+                ;;
             *)
                 echo -e "${RED}Invalid choice. Defaulting to GitHub.${NC}"
                 platform="github"
                 ;;
         esac
-        
-        if [[ "$platform" == "forgejo" ]]; then
-            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
-            read server_input
-            server_url="${server_input:-forge.ourworld.tf}"
-        elif [[ "$platform" == "gitea" ]]; then
-            echo -e "${GREEN}Enter Gitea server URL (default: git.ourworld.tf):${NC}"
-            read server_input
-            [ -n "$server_input" ] && gitea_server="$server_input"
-        fi
-        
+
         echo -e "${GREEN}Enter username or organization name:${NC}"
         read username
-        
+
         if [ -z "$username" ]; then
             echo -e "${RED}Error: Username cannot be empty.${NC}"
             return 1
@@ -3267,7 +3299,7 @@ pr_merge() {
 
 # Function to perform git pull operations
 pull() {
-    local branch=${1:-development}
+    local branch=${1:-main}
     git checkout "$branch" && git stash && git fetch && git pull && git status
 }
 
@@ -3425,291 +3457,489 @@ repo() {
 
 # Function to create a repository
 repo_create() {
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+	echo -e "${GREEN}Which platform would you like to use?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub (github.com)"
+	read -p "Enter your choice (1/2/3): " platform_choice
 
-    echo -e "${GREEN}Enter repository name:${NC}"
-    read repo_name
+	echo -e "${GREEN}Enter repository name:${NC}"
+	read repo_name
 
-    echo -e "${GREEN}Enter repository description:${NC}"
-    read description
+	echo -e "${GREEN}Enter repository description:${NC}"
+	read description
 
-    echo -e "${GREEN}Make repository private? (y/n):${NC}"
-    read is_private
+	echo -e "${GREEN}Make repository private? (y/n):${NC}"
+	read is_private
 
-    case "$platform_choice" in
-        1)
-            visibility=""
-            if [[ $is_private == "y" ]]; then
-                visibility="--private"
-            else
-                visibility="--public"
-            fi
+	case "$platform_choice" in
+		1)
+			# Forgejo via HTTP API
+			local forgejo_server
+			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+			read -r forgejo_server
+			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
 
-            echo -e "\n${PURPLE}Creating repository on Gitea...${NC}"
-            if tea repo create --name "$repo_name" --description "$description" $visibility; then
-                echo -e "${GREEN}Repository created successfully on Gitea!${NC}"
-            else
-                echo -e "${RED}Failed to create repository on Gitea.${NC}"
-            fi
-            ;;
-        2)
-            visibility=""
-            if [[ $is_private == "y" ]]; then
-                visibility="--private"
-            else
-                visibility="--public"
-            fi
+			if ! command -v curl &> /dev/null; then
+				echo -e "${RED}Error: curl is required to create repositories on Forgejo.${NC}"
+				return 1
+			fi
+			if ! command -v jq &> /dev/null; then
+				echo -e "${RED}Error: jq is required to create repositories on Forgejo.${NC}"
+				return 1
+			fi
 
-            echo -e "\n${PURPLE}Creating repository on GitHub...${NC}"
-            if gh repo create "$repo_name" --description "$description" $visibility --confirm; then
-                echo -e "${GREEN}Repository created successfully on GitHub!${NC}"
-            else
-                echo -e "${RED}Failed to create repository on GitHub.${NC}"
-            fi
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+			local auth_header=""
+			local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
+			if [ -n "$cached_token" ]; then
+				echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+				echo -e "${GREEN}Use cached token? (y/n):${NC}"
+				read -r use_cached
+				if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+					auth_header="Authorization: token $cached_token"
+				fi
+			fi
+
+			if [ -z "$auth_header" ]; then
+				echo -e "${GREEN}Enter your Forgejo API token (with repo scope):${NC}"
+				read -s forgejo_token
+				echo
+				if [ -z "$forgejo_token" ]; then
+					echo -e "${RED}Error: Token cannot be empty.${NC}"
+					return 1
+				fi
+				auth_header="Authorization: token $forgejo_token"
+				save_token "forgejo" "$forgejo_server" "$forgejo_token"
+			fi
+
+			local base_url="https://$forgejo_server"
+			local private_flag
+			if [[ "$is_private" == "y" ]]; then
+				private_flag="true"
+			else
+				private_flag="false"
+			fi
+
+			local payload
+			payload=$(jq -n --arg name "$repo_name" --arg desc "$description" --arg private "$is_private" '{name:$name, description:$desc, private: ($private == "y") }')
+
+			echo -e "\n${PURPLE}Creating repository on Forgejo ($forgejo_server)...${NC}"
+			local response
+			response=$(curl -s -H "$auth_header" -H "Content-Type: application/json" -X POST "$base_url/api/v1/user/repos" -d "$payload")
+
+			if echo "$response" | jq -e '.id // .name' &>/dev/null; then
+				echo -e "${GREEN}Repository created successfully on Forgejo!${NC}"
+			else
+				echo -e "${RED}Failed to create repository on Forgejo.${NC}"
+				if echo "$response" | jq -e '.message' &>/dev/null; then
+					echo -e "${ORANGE}Error: $(echo "$response" | jq -r '.message')${NC}"
+				fi
+				return 1
+			fi
+			;;
+		2)
+			visibility=""
+			if [[ $is_private == "y" ]]; then
+				visibility="--private"
+			else
+				visibility="--public"
+			fi
+
+			echo -e "\n${PURPLE}Creating repository on Gitea...${NC}"
+			if tea repo create --name "$repo_name" --description "$description" $visibility; then
+				echo -e "${GREEN}Repository created successfully on Gitea!${NC}"
+			else
+				echo -e "${RED}Failed to create repository on Gitea.${NC}"
+			fi
+			;;
+		3)
+			visibility=""
+			if [[ $is_private == "y" ]]; then
+				visibility="--private"
+			else
+				visibility="--public"
+			fi
+
+			echo -e "\n${PURPLE}Creating repository on GitHub...${NC}"
+			if gh repo create "$repo_name" --description "$description" $visibility --confirm; then
+				echo -e "${GREEN}Repository created successfully on GitHub!${NC}"
+			else
+				echo -e "${RED}Failed to create repository on GitHub.${NC}"
+			fi
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, 3 for GitHub, or 4 for Custom Forgejo.${NC}"
+			return 1
+			;;
+	esac
 }
 
 # Function to delete a repository
 repo_delete() {
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea"
-    echo -e "2) GitHub"
-    read -p "Enter your choice (1/2): " platform_choice
+	echo -e "${GREEN}Which platform would you like to use?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub (github.com)"
+	read -p "Enter your choice (1/2/3): " platform_choice
 
-    case "$platform_choice" in
-        1)
-            echo -e "${GREEN}Enter repository (organization/repository):${NC}"
-            read repo_name
+	case "$platform_choice" in
+		1)
+			local forgejo_server
+			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+			read -r forgejo_server
+			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
 
-            echo -e "${RED}WARNING: This action cannot be undone!${NC}"
-            echo -e "${GREEN}Are you sure you want to delete $repo_name? (y/n):${NC}"
-            read confirm
+			if ! command -v curl &> /dev/null; then
+				echo -e "${RED}Error: curl is required to delete repositories on Forgejo.${NC}"
+				return 1
+			fi
 
-            if [[ $confirm == "y" ]]; then
-                echo -e "\n${PURPLE}Deleting repository from Gitea...${NC}"
-                if tea repo delete "$repo_name" --confirm; then
-                    echo -e "${GREEN}Repository deleted successfully from Gitea!${NC}"
-                else
-                    echo -e "${RED}Failed to delete repository from Gitea.${NC}"
-                fi
-            fi
-            ;;
-        2)
-            echo -e "${GREEN}Enter repository name:${NC}"
-            read repo_name
+			local auth_header=""
+			local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
+			if [ -n "$cached_token" ]; then
+				echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
+				echo -e "${GREEN}Use cached token? (y/n):${NC}"
+				read -r use_cached
+				if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+					auth_header="Authorization: token $cached_token"
+				fi
+			fi
+			if [ -z "$auth_header" ]; then
+				echo -e "${GREEN}Enter your Forgejo API token (with repo scope):${NC}"
+				read -s forgejo_token
+				echo
+				if [ -z "$forgejo_token" ]; then
+					echo -e "${RED}Error: Token cannot be empty.${NC}"
+					return 1
+				fi
+				auth_header="Authorization: token $forgejo_token"
+				save_token "forgejo" "$forgejo_server" "$forgejo_token"
+			fi
 
-            echo -e "${RED}WARNING: This action cannot be undone!${NC}"
-            echo -e "${GREEN}Are you sure you want to delete $repo_name? (y/n):${NC}"
-            read confirm
+			echo -e "${GREEN}Enter repository (owner/repository):${NC}"
+			read repo_name
 
-            if [[ $confirm == "y" ]]; then
-                echo -e "\n${PURPLE}Deleting repository from GitHub...${NC}"
-                if gh repo delete "$repo_name" --confirm; then
-                    echo -e "${GREEN}Repository deleted successfully from GitHub!${NC}"
-                else
-                    echo -e "${RED}Failed to delete repository from GitHub.${NC}"
-                fi
-            fi
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+			echo -e "${RED}WARNING: This action cannot be undone!${NC}"
+			echo -e "${GREEN}Are you sure you want to delete $repo_name from Forgejo ($forgejo_server)? (y/n):${NC}"
+			read confirm
+
+			if [[ $confirm == "y" ]]; then
+				local base_url="https://$forgejo_server"
+				local http_code
+				http_code=$(curl -s -o /dev/null -w "%{http_code}" -H "$auth_header" -X DELETE "$base_url/api/v1/repos/$repo_name")
+				if [[ "$http_code" == "200" || "$http_code" == "204" ]]; then
+					echo -e "${GREEN}Repository deleted successfully from Forgejo!${NC}"
+				else
+					echo -e "${RED}Failed to delete repository from Forgejo. HTTP status: $http_code${NC}"
+					return 1
+				fi
+			fi
+			;;
+		2)
+			echo -e "${GREEN}Enter repository (organization/repository):${NC}"
+			read repo_name
+
+			echo -e "${RED}WARNING: This action cannot be undone!${NC}"
+			echo -e "${GREEN}Are you sure you want to delete $repo_name? (y/n):${NC}"
+			read confirm
+
+			if [[ $confirm == "y" ]]; then
+				echo -e "\n${PURPLE}Deleting repository from Gitea...${NC}"
+				if tea repo delete "$repo_name" --confirm; then
+					echo -e "${GREEN}Repository deleted successfully from Gitea!${NC}"
+				else
+					echo -e "${RED}Failed to delete repository from Gitea.${NC}"
+				fi
+			fi
+			;;
+		3)
+			echo -e "${GREEN}Enter repository name:${NC}"
+			read repo_name
+
+			echo -e "${RED}WARNING: This action cannot be undone!${NC}"
+			echo -e "${GREEN}Are you sure you want to delete $repo_name? (y/n):${NC}"
+			read confirm
+
+			if [[ $confirm == "y" ]]; then
+				echo -e "\n${PURPLE}Deleting repository from GitHub...${NC}"
+				if gh repo delete "$repo_name" --confirm; then
+					echo -e "${GREEN}Repository deleted successfully from GitHub!${NC}"
+				else
+					echo -e "${RED}Failed to delete repository from GitHub.${NC}"
+				fi
+			fi
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
+			return 1
+			;;
+	esac
 }
 
 # Function to initialize a new Git repository and push to GitHub or Gitea
 init() {
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea (git.ourworld.tf)"
-    echo -e "2) GitHub (github.com)"
-    read -p "Enter your choice (1/2): " platform_choice
+	echo -e "${GREEN}Which platform would you like to use?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub (github.com)"
+	echo -e "4) Custom (self-hosted Forgejo/Gitea)"
+	read -p "Enter your choice (1/2/3/4): " platform_choice
 
-    # Set platform-specific variables
-    case "$platform_choice" in
-        1)
-            git_url="https://git.ourworld.tf"
-            initial_branch="development"
-            platform="Gitea"
-            ;;
-        2)
-            git_url="https://github.com"
-            initial_branch="main"
-            platform="GitHub"
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+	# Set platform-specific variables
+	case "$platform_choice" in
+		1)
+			git_url="https://forge.ourworld.tf"
+			initial_branch="main"
+			platform="Forgejo"
+			;;
+		2)
+			git_url="https://git.ourworld.tf"
+			initial_branch="main"
+			platform="Gitea"
+			;;
+		3)
+			git_url="https://github.com"
+			initial_branch="main"
+			platform="GitHub"
+			;;
+		4)
+			echo -e "${GREEN}Is your custom host:${NC}"
+			echo -e "1) Forgejo"
+			echo -e "2) Gitea"
+			read -p "Enter your choice (1/2): " custom_choice
 
-    echo -e "${GREEN}Initializing new Git repository...${NC}"
-    
-    echo -e "Enter your $platform username:"
-    read username
-    echo -e "Enter the repository name:"
-    read repo_name
+			case "$custom_choice" in
+				1)
+					platform="Forgejo"
+					echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+					read -r custom_server
+					[ -z "$custom_server" ] && custom_server="forge.ourworld.tf"
+					custom_server=$(echo "$custom_server" | sed -E 's|^https?://||' | sed 's|/$||')
+					git_url="https://$custom_server"
+					;;
+				2)
+					platform="Gitea"
+					echo -e "${GREEN}Enter Gitea server URL (default: git.ourworld.tf):${NC}"
+					read -r custom_server
+					[ -z "$custom_server" ] && custom_server="git.ourworld.tf"
+					custom_server=$(echo "$custom_server" | sed -E 's|^https?://||' | sed 's|/$||')
+					git_url="https://$custom_server"
+					;;
+				*)
+					echo -e "${ORANGE}Invalid choice. Defaulting to Forgejo (forge.ourworld.tf).${NC}"
+					platform="Forgejo"
+					git_url="https://forge.ourworld.tf"
+					;;
+			esac
 
-    echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
-    echo -e "Press Enter when you're ready to continue..."
-    read
+			initial_branch="main"
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, 3 for GitHub, or 4 for Custom.${NC}"
+			return 1
+			;;
+	esac
 
-    git init
+	echo -e "${GREEN}Initializing new Git repository...${NC}"
+	
+	echo -e "Enter your $platform username:"
+	read username
+	echo -e "Enter the repository name:"
+	read repo_name
 
-    echo -e "${GREEN}Setting initial branch as '${initial_branch}'. Press ENTER to continue or type 'replace' to change the branch name:${NC}"
-    read branch_choice
+	echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
+	echo -e "Press Enter when you're ready to continue..."
+	read
 
-    if [[ $branch_choice == "replace" ]]; then
-        echo -e "Enter the new branch name:"
-        read new_branch_name
-        initial_branch=$new_branch_name
-    fi
+	git init
 
-    git checkout -b $initial_branch
-    git add .
+	echo -e "${GREEN}Setting initial branch as '${initial_branch}'. Press ENTER to continue or type 'replace' to change the branch name:${NC}"
+	read branch_choice
 
-    echo "Enter initial commit message:"
-    read commit_message
-    git commit -m "$commit_message"
+	if [[ $branch_choice == "replace" ]]; then
+		echo -e "Enter the new branch name:"
+		read new_branch_name
+		initial_branch=$new_branch_name
+	fi
 
-    git remote add origin "$git_url/$username/$repo_name.git"
-    git push -u origin $initial_branch
+	git checkout -b $initial_branch
+	git add .
 
-    echo -e "${PURPLE}Repository initialized and pushed to $platform successfully.${NC}"
-    echo -e "Branch: ${BLUE}$initial_branch${NC}"
+	echo "Enter initial commit message:"
+	read commit_message
+	git commit -m "$commit_message"
+
+	git remote add origin "$git_url/$username/$repo_name.git"
+	git push -u origin $initial_branch
+
+	echo -e "${PURPLE}Repository initialized and pushed to $platform successfully.${NC}"
+	echo -e "Branch: ${BLUE}$initial_branch${NC}"
 }
 
 # Function to initialize multiple repositories at once
 init-list() {
-    echo -e "${GREEN}Which platform would you like to use?${NC}"
-    echo -e "1) Gitea (git.ourworld.tf)"
-    echo -e "2) GitHub (github.com)"
-    read -p "Enter your choice (1/2): " platform_choice
+	echo -e "${GREEN}Which platform would you like to use?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub (github.com)"
+	echo -e "4) Custom (self-hosted Forgejo/Gitea)"
+	read -p "Enter your choice (1/2/3/4): " platform_choice
 
-    # Set platform-specific variables
-    case "$platform_choice" in
-        1)
-            git_url="https://git.ourworld.tf"
-            initial_branch="development"
-            platform="Gitea"
-            ;;
-        2)
-            git_url="https://github.com"
-            initial_branch="main"
-            platform="GitHub"
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Gitea or 2 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+	# Set platform-specific variables
+	case "$platform_choice" in
+		1)
+			git_url="https://forge.ourworld.tf"
+			initial_branch="main"
+			platform="Forgejo"
+			;;
+		2)
+			git_url="https://git.ourworld.tf"
+			initial_branch="main"
+			platform="Gitea"
+			;;
+		3)
+			git_url="https://github.com"
+			initial_branch="main"
+			platform="GitHub"
+			;;
+		4)
+			echo -e "${GREEN}Is your custom host:${NC}"
+			echo -e "1) Forgejo"
+			echo -e "2) Gitea"
+			read -p "Enter your choice (1/2): " custom_choice
 
-    echo -e "Enter your $platform username:"
-    read username
+			case "$custom_choice" in
+				1)
+					platform="Forgejo"
+					echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+					read -r custom_server
+					[ -z "$custom_server" ] && custom_server="forge.ourworld.tf"
+					custom_server=$(echo "$custom_server" | sed -E 's|^https?://||' | sed 's|/$||')
+					git_url="https://$custom_server"
+					;;
+				2)
+					platform="Gitea"
+					echo -e "${GREEN}Enter Gitea server URL (default: git.ourworld.tf):${NC}"
+					read -r custom_server
+					[ -z "$custom_server" ] && custom_server="git.ourworld.tf"
+					custom_server=$(echo "$custom_server" | sed -E 's|^https?://||' | sed 's|/$||')
+					git_url="https://$custom_server"
+					;;
+				*)
+					echo -e "${ORANGE}Invalid choice. Defaulting to Forgejo (forge.ourworld.tf).${NC}"
+					platform="Forgejo"
+					git_url="https://forge.ourworld.tf"
+					;;
+			esac
 
-    if [ -z "$username" ]; then
-        echo -e "${RED}Error: Username cannot be empty.${NC}"
-        return 1
-    fi
+			initial_branch="main"
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, 3 for GitHub, or 4 for Custom.${NC}"
+			return 1
+			;;
+	esac
 
-    echo -e "${GREEN}Enter the list of repository names (one per line, end with an empty line):${NC}"
-    echo -e "${BLUE}You can now type or paste the list. Press Enter twice to finish.${NC}"
-    
-    # Create a parent directory for all repositories
-    parent_dir="$username-repos"
-    mkdir -p "$parent_dir"
-    cd "$parent_dir" || return 1
-    
-    # Read the list of repository names
-    local successful_inits=0
-    local failed_inits=0
-    local total_repos=0
-    
-    while IFS= read -r repo_name; do
-        # Break the loop if an empty line is entered
-        if [ -z "$repo_name" ]; then
-            break
-        fi
-        
-        # Clean the repo name
-        repo_name=$(echo "$repo_name" | sed 's/^[[:space:]]*-[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-        
-        ((total_repos++))
-        
-        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}Processing: $repo_name${NC}"
-        
-        # Skip if repository directory already exists
-        if [ -d "$repo_name" ]; then
-            echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
-            continue
-        fi
-        
-        # Create directory for the repository
-        mkdir -p "$repo_name"
-        cd "$repo_name" || continue
-        
-        echo -e "${GREEN}Initializing new Git repository for $repo_name...${NC}"
-        
-        # Make sure to create a repository on the platform first
-        echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
-        echo -e "Press Enter when you're ready to continue..."
-        read
-        
-        # Initialize git repository
-        if git init; then
-            echo -e "${GREEN}Setting initial branch as '${initial_branch}'...${NC}"
-            git checkout -b $initial_branch
-            
-            # Create a README.md file if it doesn't exist
-            if [ ! -f "README.md" ]; then
-                echo "# $repo_name" > README.md
-                echo "Repository created with GitS init-list" >> README.md
-            fi
-            
-            git add .
-            
-            # Commit with a standard message
-            commit_message="Initial commit from GitS init-list"
-            git commit -m "$commit_message"
-            
-            # Set remote origin
-            git remote add origin "$git_url/$username/$repo_name.git"
-            
-            # Push to remote
-            if git push -u origin $initial_branch; then
-                ((successful_inits++))
-                echo -e "${GREEN}Repository $repo_name initialized and pushed to $platform successfully.${NC}"
-                echo -e "Branch: ${BLUE}$initial_branch${NC}"
-            else
-                ((failed_inits++))
-                echo -e "${RED}Failed to push repository $repo_name to $platform.${NC}"
-            fi
-        else
-            ((failed_inits++))
-            echo -e "${RED}Failed to initialize repository $repo_name.${NC}"
-        fi
-        
-        # Return to parent directory
-        cd ..
-    done
-    
-    # Display summary
-    echo -e "\n${BLUE}Initialization Summary:${NC}"
-    echo -e "Total Repositories: ${total_repos}"
-    echo -e "${GREEN}Successfully Initialized: ${successful_inits}${NC}"
-    echo -e "${RED}Failed to Initialize: ${failed_inits}${NC}"
-    
-    # Return to original directory
-    cd - > /dev/null
+	echo -e "Enter your $platform username:"
+	read username
+
+	if [ -z "$username" ]; then
+		echo -e "${RED}Error: Username cannot be empty.${NC}"
+		return 1
+	fi
+
+	echo -e "${GREEN}Enter the list of repository names (one per line, end with an empty line):${NC}"
+	echo -e "${BLUE}You can now type or paste the list. Press Enter twice to finish.${NC}"
+	
+	# Create a parent directory for all repositories
+	parent_dir="$username-repos"
+	mkdir -p "$parent_dir"
+	cd "$parent_dir" || return 1
+	
+	# Read the list of repository names
+	local successful_inits=0
+	local failed_inits=0
+	local total_repos=0
+	
+	while IFS= read -r repo_name; do
+		# Break the loop if an empty line is entered
+		if [ -z "$repo_name" ]; then
+			break
+		fi
+		
+		# Clean the repo name
+		repo_name=$(echo "$repo_name" | sed 's/^[[:space:]]*-[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+		
+		((total_repos++))
+		
+		echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
+		echo -e "${BLUE}Processing: $repo_name${NC}"
+		
+		# Skip if repository directory already exists
+		if [ -d "$repo_name" ]; then
+			echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
+			continue
+		fi
+		
+		# Create directory for the repository
+		mkdir -p "$repo_name"
+		cd "$repo_name" || continue
+		
+		echo -e "${GREEN}Initializing new Git repository for $repo_name...${NC}"
+		
+		# Make sure to create a repository on the platform first
+		echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
+		echo -e "Press Enter when you're ready to continue..."
+		read
+		
+		# Initialize git repository
+		if git init; then
+			echo -e "${GREEN}Setting initial branch as '${initial_branch}'...${NC}"
+			git checkout -b $initial_branch
+			
+			# Create a README.md file if it doesn't exist
+			if [ ! -f "README.md" ]; then
+				echo "# $repo_name" > README.md
+				echo "Repository created with GitS init-list" >> README.md
+			fi
+			
+			git add .
+			
+			# Commit with a standard message
+			commit_message="Initial commit from GitS init-list"
+			git commit -m "$commit_message"
+			
+			# Set remote origin
+			git remote add origin "$git_url/$username/$repo_name.git"
+			
+			# Push to remote
+			if git push -u origin $initial_branch; then
+				((successful_inits++))
+				echo -e "${GREEN}Repository $repo_name initialized and pushed to $platform successfully.${NC}"
+				echo -e "Branch: ${BLUE}$initial_branch${NC}"
+			else
+				((failed_inits++))
+				echo -e "${RED}Failed to push repository $repo_name to $platform.${NC}"
+			fi
+		else
+			((failed_inits++))
+			echo -e "${RED}Failed to initialize repository $repo_name.${NC}"
+		fi
+		
+		# Return to parent directory
+		cd ..
+	done
+	
+	# Display summary
+	echo -e "\n${BLUE}Initialization Summary:${NC}"
+	echo -e "Total Repositories: ${total_repos}"
+	echo -e "${GREEN}Successfully Initialized: ${successful_inits}${NC}"
+	echo -e "${RED}Failed to Initialize: ${failed_inits}${NC}"
+	
+	# Return to original directory
+	cd - > /dev/null
 }
 
 # Function to create a new branch
@@ -3758,260 +3988,262 @@ unrevert() {
 
 # Function to handle login
 login() {
-    echo -e "${GREEN}Which platform would you like to login to?${NC}"
-    echo -e "1) Forgejo (forge.ourworld.tf or custom)"
-    echo -e "2) Gitea (git.ourworld.tf)"
-    echo -e "3) GitHub"
-    read -p "Enter your choice (1/2/3): " platform_choice
+	echo -e "${GREEN}Which platform would you like to login to?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub"
+	echo -e "4) Custom (Forgejo custom host)"
+	read -p "Enter your choice (1/2/3/4): " platform_choice
 
-    case "$platform_choice" in
-        1)
-            # Forgejo login - token-based authentication
-            echo -e "${PURPLE}Logging into Forgejo...${NC}"
-            
-            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
-            read -r forgejo_server
-            [ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
-            
-            # Remove protocol if provided
-            forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
-            
-            # Check for existing token
-            local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
-            if [ -n "$existing_token" ]; then
-                echo -e "${ORANGE}A token for $forgejo_server already exists.${NC}"
-                echo -e "${GREEN}What would you like to do?${NC}"
-                echo -e "1) Replace with a new token"
-                echo -e "2) Keep existing token"
-                read -p "Enter your choice (1/2): " token_choice
-                
-                if [[ "$token_choice" != "1" ]]; then
-                    echo -e "${GREEN}Keeping existing token for $forgejo_server${NC}"
-                    return 0
-                fi
-            fi
-            
-            echo -e ""
-            echo -e "${BLUE}To generate an API token:${NC}"
-            echo -e "  1. Go to https://$forgejo_server/user/settings/applications"
-            echo -e "  2. Under 'Manage Access Tokens', enter a token name"
-            echo -e "  3. Select scopes: 'repo' (for repository access)"
-            echo -e "  4. Click 'Generate Token' and copy it"
-            echo -e ""
-            
-            echo -e "${GREEN}Enter your Forgejo API token:${NC}"
-            read -s forgejo_token
-            echo
-            
-            if [ -z "$forgejo_token" ]; then
-                echo -e "${RED}Error: Token cannot be empty.${NC}"
-                return 1
-            fi
-            
-            # Validate token by making a test API call
-            echo -e "${BLUE}Validating token...${NC}"
-            local test_response=$(curl -s -H "Authorization: token $forgejo_token" "https://$forgejo_server/api/v1/user" 2>/dev/null)
-            
-            if echo "$test_response" | jq -e '.login' &>/dev/null; then
-                local username=$(echo "$test_response" | jq -r '.login')
-                save_token "forgejo" "$forgejo_server" "$forgejo_token"
-                echo -e "${GREEN}Successfully logged into Forgejo as '$username' on $forgejo_server${NC}"
-                echo -e "${GREEN}Token saved to $(get_gits_config_dir)/tokens.conf${NC}"
-            else
-                echo -e "${RED}Failed to validate token. Please check your token and try again.${NC}"
-                if echo "$test_response" | jq -e '.message' &>/dev/null; then
-                    echo -e "${ORANGE}Error: $(echo "$test_response" | jq -r '.message')${NC}"
-                fi
-                return 1
-            fi
-            ;;
-        2)
-            # Check if tea CLI is available
-            if ! command -v tea &> /dev/null; then
-                echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
-                return 1
-            fi
-            
-            echo -e "${PURPLE}Preparing to login to Gitea...${NC}"
-            
-            # Check for existing logins
-            echo -e "${BLUE}Checking for existing Gitea logins...${NC}"
-            logins_output=$(tea login list 2>/dev/null)
-            
-            if [ -n "$logins_output" ] && echo "$logins_output" | grep -q "Login"; then
-                echo -e "${GREEN}Existing Gitea logins found:${NC}"
-                echo "$logins_output"
-                
-                # Ask for the desired login name
-                echo -e "${GREEN}Enter the login name you want to use:${NC}"
-                read desired_login
-                
-                if [ -z "$desired_login" ]; then
-                    echo -e "${RED}Error: Login name cannot be empty.${NC}"
-                    return 1
-                fi
-                
-                # Check if this login name already exists
-                if echo "$logins_output" | grep -q "$desired_login"; then
-                    echo -e "${ORANGE}A login with the name '$desired_login' already exists.${NC}"
-                    echo -e "${GREEN}What would you like to do?${NC}"
-                    echo -e "1) Remove the existing login and create a new one"
-                    echo -e "2) Use a different login name"
-                    echo -e "3) Cancel login process"
-                    read -p "Enter your choice (1/2/3): " conflict_choice
+	case "$platform_choice" in
+		1|4)
+			# Forgejo login - token-based authentication
+			echo -e "${PURPLE}Logging into Forgejo...${NC}"
+			
+			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+			read -r forgejo_server
+			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+			
+			# Remove protocol if provided
+			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
+			
+			# Check for existing token
+			local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
+			if [ -n "$existing_token" ]; then
+				echo -e "${ORANGE}A token for $forgejo_server already exists.${NC}"
+				echo -e "${GREEN}What would you like to do?${NC}"
+				echo -e "1) Replace with a new token"
+				echo -e "2) Keep existing token"
+				read -p "Enter your choice (1/2): " token_choice
+				
+				if [[ "$token_choice" != "1" ]]; then
+					echo -e "${GREEN}Keeping existing token for $forgejo_server${NC}"
+					return 0
+				fi
+			fi
+			
+			echo -e ""
+			echo -e "${BLUE}To generate an API token:${NC}"
+			echo -e "  1. Go to https://$forgejo_server/user/settings/applications"
+			echo -e "  2. Under 'Manage Access Tokens', enter a token name"
+			echo -e "  3. Select scopes: 'repo' (for repository access)"
+			echo -e "  4. Click 'Generate Token' and copy it"
+			echo -e ""
+			
+			echo -e "${GREEN}Enter your Forgejo API token:${NC}"
+			read -s forgejo_token
+			echo
+			
+			if [ -z "$forgejo_token" ]; then
+				echo -e "${RED}Error: Token cannot be empty.${NC}"
+				return 1
+			fi
+			
+			# Validate token by making a test API call
+			echo -e "${BLUE}Validating token...${NC}"
+			local test_response=$(curl -s -H "Authorization: token $forgejo_token" "https://$forgejo_server/api/v1/user" 2>/dev/null)
+			
+			if echo "$test_response" | jq -e '.login' &>/dev/null; then
+				local username=$(echo "$test_response" | jq -r '.login')
+				save_token "forgejo" "$forgejo_server" "$forgejo_token"
+				echo -e "${GREEN}Successfully logged into Forgejo as '$username' on $forgejo_server${NC}"
+				echo -e "${GREEN}Token saved to $(get_gits_config_dir)/tokens.conf${NC}"
+			else
+				echo -e "${RED}Failed to validate token. Please check your token and try again.${NC}"
+				if echo "$test_response" | jq -e '.message' &>/dev/null; then
+					echo -e "${ORANGE}Error: $(echo "$test_response" | jq -r '.message')${NC}"
+				fi
+				return 1
+			fi
+			;;
+		2)
+			# Check if tea CLI is available
+			if ! command -v tea &> /dev/null; then
+				echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
+				return 1
+			fi
+			
+			echo -e "${PURPLE}Preparing to login to Gitea...${NC}"
+			
+			# Check for existing logins
+			echo -e "${BLUE}Checking for existing Gitea logins...${NC}"
+			logins_output=$(tea login list 2>/dev/null)
+			
+			if [ -n "$logins_output" ] && echo "$logins_output" | grep -q "Login"; then
+				echo -e "${GREEN}Existing Gitea logins found:${NC}"
+				echo "$logins_output"
+				
+				# Ask for the desired login name
+				echo -e "${GREEN}Enter the login name you want to use:${NC}"
+				read desired_login
+				
+				if [ -z "$desired_login" ]; then
+					echo -e "${RED}Error: Login name cannot be empty.${NC}"
+					return 1
+				fi
+				
+				# Check if this login name already exists
+				if echo "$logins_output" | grep -q "$desired_login"; then
+					echo -e "${ORANGE}A login with the name '$desired_login' already exists.${NC}"
+					echo -e "${GREEN}What would you like to do?${NC}"
+					echo -e "1) Remove the existing login and create a new one"
+					echo -e "2) Use a different login name"
+					echo -e "3) Cancel login process"
+					read -p "Enter your choice (1/2/3): " conflict_choice
                     
-                    case "$conflict_choice" in
-                        1)
-                            echo -e "${PURPLE}Removing existing login '$desired_login'...${NC}"
-                            if tea logout "$desired_login"; then
-                                echo -e "${GREEN}Successfully removed existing login.${NC}"
-                                echo -e "${PURPLE}Now you can create a new login with the same name.${NC}"
-                                echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-                                
-                                if tea login add; then
-                                    echo -e "${GREEN}Successfully created new Gitea login.${NC}"
-                                else
-                                    echo -e "${RED}Failed to create new Gitea login.${NC}"
-                                fi
-                            else
-                                echo -e "${RED}Failed to remove existing login. Login process aborted.${NC}"
-                                return 1
-                            fi
-                            ;;
-                        2)
-                            echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-                            echo -e "${ORANGE}When prompted for a login name, use a different name than '$desired_login'.${NC}"
-                            
-                            if tea login add; then
-                                echo -e "${GREEN}Successfully created new Gitea login.${NC}"
-                            else
-                                echo -e "${RED}Failed to create new Gitea login.${NC}"
-                            fi
-                            ;;
-                        3)
-                            echo -e "${ORANGE}Login process cancelled.${NC}"
-                            return 0
-                            ;;
-                        *)
-                            echo -e "${RED}Invalid choice. Login process aborted.${NC}"
-                            return 1
-                            ;;
-                    esac
-                else
-                    # Login name doesn't exist, proceed with normal login
-                    echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-                    echo -e "${ORANGE}When prompted for a login name, enter '$desired_login'.${NC}"
-                    
-                    if tea login add; then
-                        echo -e "${GREEN}Successfully created new Gitea login.${NC}"
-                    else
-                        echo -e "${RED}Failed to create new Gitea login.${NC}"
-                    fi
-                fi
-            else
-                # No existing logins, proceed with normal login
-                echo -e "${GREEN}No existing Gitea logins found. Creating a new login...${NC}"
-                echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-                
-                if tea login add; then
-                    echo -e "${GREEN}Successfully created new Gitea login.${NC}"
-                else
-                    echo -e "${RED}Failed to create new Gitea login.${NC}"
-                fi
-            fi
-            ;;
-        3)
-            echo -e "${PURPLE}Logging into GitHub...${NC}"
-            if gh auth login; then
-                echo -e "${GREEN}Successfully logged into GitHub.${NC}"
-            else
-                echo -e "${RED}Failed to login to GitHub.${NC}"
-            fi
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+					case "$conflict_choice" in
+						1)
+							echo -e "${PURPLE}Removing existing login '$desired_login'...${NC}"
+							if tea logout "$desired_login"; then
+								echo -e "${GREEN}Successfully removed existing login.${NC}"
+								echo -e "${PURPLE}Now you can create a new login with the same name.${NC}"
+								echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
+								
+								if tea login add; then
+									echo -e "${GREEN}Successfully created new Gitea login.${NC}"
+								else
+									echo -e "${RED}Failed to create new Gitea login.${NC}"
+								fi
+							else
+								echo -e "${RED}Failed to remove existing login. Login process aborted.${NC}"
+								return 1
+							fi
+							;;
+						2)
+							echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
+							echo -e "${ORANGE}When prompted for a login name, use a different name than '$desired_login'.${NC}"
+							
+							if tea login add; then
+								echo -e "${GREEN}Successfully created new Gitea login.${NC}"
+							else
+								echo -e "${RED}Failed to create new Gitea login.${NC}"
+							fi
+							;;
+						3)
+							echo -e "${ORANGE}Login process cancelled.${NC}"
+							return 0
+							;;
+						*)
+							echo -e "${RED}Invalid choice. Login process aborted.${NC}"
+							return 1
+							;;
+					esac
+				else
+					# Login name doesn't exist, proceed with normal login
+					echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
+					echo -e "${ORANGE}When prompted for a login name, enter '$desired_login'.${NC}"
+					
+					if tea login add; then
+						echo -e "${GREEN}Successfully created new Gitea login.${NC}"
+					else
+						echo -e "${RED}Failed to create new Gitea login.${NC}"
+					fi
+				fi
+			else
+				# No existing logins, proceed with normal login
+				echo -e "${GREEN}No existing Gitea logins found. Creating a new login...${NC}"
+				echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
+				
+				if tea login add; then
+					echo -e "${GREEN}Successfully created new Gitea login.${NC}"
+				else
+					echo -e "${RED}Failed to create new Gitea login.${NC}"
+				fi
+			fi
+			;;
+		3)
+			echo -e "${PURPLE}Logging into GitHub...${NC}"
+			if gh auth login; then
+				echo -e "${GREEN}Successfully logged into GitHub.${NC}"
+			else
+				echo -e "${RED}Failed to login to GitHub.${NC}"
+			fi
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
+			return 1
+			;;
+	esac
 }
 
 # Function to handle logout
 logout() {
-    echo -e "${GREEN}Which platform would you like to logout from?${NC}"
-    echo -e "1) Forgejo (forge.ourworld.tf or custom)"
-    echo -e "2) Gitea (git.ourworld.tf)"
-    echo -e "3) GitHub"
-    read -p "Enter your choice (1/2/3): " platform_choice
+	echo -e "${GREEN}Which platform would you like to logout from?${NC}"
+	echo -e "1) Forgejo (forge.ourworld.tf)"
+	echo -e "2) Gitea (git.ourworld.tf)"
+	echo -e "3) GitHub"
+	echo -e "4) Custom (Forgejo custom host)"
+	read -p "Enter your choice (1/2/3/4): " platform_choice
 
-    case "$platform_choice" in
-        1)
-            # Forgejo logout - clear cached token
-            echo -e "${PURPLE}Logging out from Forgejo...${NC}"
-            
-            echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
-            read -r forgejo_server
-            [ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
-            
-            # Remove protocol if provided
-            forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
-            
-            # Check if token exists
-            local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
-            if [ -z "$existing_token" ]; then
-                echo -e "${ORANGE}No token found for $forgejo_server. You are not logged in.${NC}"
-                return 1
-            fi
-            
-            clear_cached_token "forgejo" "$forgejo_server"
-            echo -e "${GREEN}Successfully logged out from Forgejo ($forgejo_server).${NC}"
-            ;;
-        2)
-            # Check if tea CLI is available
-            if ! command -v tea &> /dev/null; then
-                echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
-                return 1
-            fi
-            
-            # List available logins
-            echo -e "${BLUE}Checking available Gitea logins...${NC}"
-            logins_output=$(tea login list 2>/dev/null)
-            
-            if [ -z "$logins_output" ] || ! echo "$logins_output" | grep -q "Login"; then
-                echo -e "${RED}No Gitea logins found. You are not logged in.${NC}"
-                return 1
-            fi
-            
-            echo -e "${GREEN}Available Gitea logins:${NC}"
-            echo "$logins_output"
-            
-            echo -e "${GREEN}Enter the login name to logout from:${NC}"
-            read login_name
-            
-            if [ -z "$login_name" ]; then
-                echo -e "${RED}Error: Login name cannot be empty.${NC}"
-                return 1
-            fi
-            
-            echo -e "${PURPLE}Logging out from Gitea login: $login_name...${NC}"
-            if tea logout "$login_name"; then
-                echo -e "${GREEN}Successfully logged out from Gitea login: $login_name.${NC}"
-            else
-                echo -e "${RED}Failed to logout from Gitea.${NC}"
-            fi
-            ;;
-        3)
-            echo -e "${PURPLE}Logging out from GitHub...${NC}"
-            if gh auth logout; then
-                echo -e "${GREEN}Successfully logged out from GitHub.${NC}"
-            else
-                echo -e "${RED}Failed to logout from GitHub.${NC}"
-            fi
-            ;;
-        *)
-            echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
-            return 1
-            ;;
-    esac
+	case "$platform_choice" in
+		1|4)
+			# Forgejo logout - clear cached token
+			echo -e "${PURPLE}Logging out from Forgejo...${NC}"
+			
+			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
+			read -r forgejo_server
+			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
+			
+			# Remove protocol if provided
+			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
+			
+			# Check if token exists
+			local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
+			if [ -z "$existing_token" ]; then
+				echo -e "${ORANGE}No token found for $forgejo_server. You are not logged in.${NC}"
+				return 1
+			fi
+			
+			clear_cached_token "forgejo" "$forgejo_server"
+			echo -e "${GREEN}Successfully logged out from Forgejo ($forgejo_server).${NC}"
+			;;
+		2)
+			# Check if tea CLI is available
+			if ! command -v tea &> /dev/null; then
+				echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
+				return 1
+			fi
+			
+			# List available logins
+			echo -e "${BLUE}Checking available Gitea logins...${NC}"
+			logins_output=$(tea login list 2>/dev/null)
+			
+			if [ -z "$logins_output" ] || ! echo "$logins_output" | grep -q "Login"; then
+				echo -e "${RED}No Gitea logins found. You are not logged in.${NC}"
+				return 1
+			fi
+			
+			echo -e "${GREEN}Available Gitea logins:${NC}"
+			echo "$logins_output"
+			
+			echo -e "${GREEN}Enter the login name to logout from:${NC}"
+			read login_name
+			
+			if [ -z "$login_name" ]; then
+				echo -e "${RED}Error: Login name cannot be empty.${NC}"
+				return 1
+			fi
+			
+			echo -e "${PURPLE}Logging out from Gitea login: $login_name...${NC}"
+			if tea logout "$login_name"; then
+				echo -e "${GREEN}Successfully logged out from Gitea login: $login_name.${NC}"
+			else
+				echo -e "${RED}Failed to logout from Gitea.${NC}"
+			fi
+			;;
+		3)
+			echo -e "${PURPLE}Logging out from GitHub...${NC}"
+			if gh auth logout; then
+				echo -e "${GREEN}Successfully logged out from GitHub.${NC}"
+			else
+				echo -e "${RED}Failed to logout from GitHub.${NC}"
+			fi
+			;;
+		*)
+			echo -e "${RED}Invalid choice. Please select 1 for Forgejo, 2 for Gitea, or 3 for GitHub.${NC}"
+			return 1
+			;;
+	esac
 }
 
 # Function to install the script
@@ -5126,7 +5358,7 @@ help() {
     
     echo -e "  ${GREEN}pull [branch]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Checkout branch, stash changes, fetch, pull, show status"
-    echo -e "                  ${BLUE}Note:${NC}    Default branch is 'development' if not specified"
+    echo -e "                  ${BLUE}Note:${NC}    Default branch is 'main' if not specified"
     echo -e "                  ${BLUE}Example:${NC} gits pull"
     echo -e "                  ${BLUE}Example:${NC} gits pull main\n"
     
@@ -5134,7 +5366,7 @@ help() {
     echo -e "                  ${BLUE}Actions:${NC} create, close, merge"
     echo -e "                  ${BLUE}Interactive:${NC} gits pr create"
     echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
-    echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
+    echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base main --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 -d --branch-name feature\n"
@@ -5155,8 +5387,9 @@ help() {
     
     echo -e "  ${GREEN}init${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Choose platform, init repo, create branch, add files"
-    echo -e "                  ${BLUE}Note:${NC}    Default branch: 'development' (Gitea), 'main' (GitHub)"
-    echo -e "                  ${BLUE}Note:${NC}    Gitea URL will be git.ourworld.tf"
+    echo -e "                  ${BLUE}Note:${NC}    Default branch: 'main' for all platforms"
+    echo -e "                  ${BLUE}Note:${NC}    Forgejo default server: forge.ourworld.tf (customizable)"
+    echo -e "                  ${BLUE}Note:${NC}    Gitea default server: git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits init\n"
     
     echo -e "  ${GREEN}new [name]${NC}"
@@ -5308,9 +5541,9 @@ help() {
     
     echo -e "${PURPLE}QUICK REFERENCE - PR WORKFLOWS:${NC}"
     echo -e "${BLUE}Interactive:${NC} gits pr create"
-    echo -e "${BLUE}Parameterized:${NC} gits pr create --title 'My PR' --base development"
-    echo -e "${BLUE}One-liner:${NC} gits pr create --title 'Update' --base development && gits pr merge --pr-number \$(gits pr-latest)"
-    echo -e "${BLUE}Current Branch:${NC} gits pr create --title 'My changes' --base development"
+    echo -e "${BLUE}Parameterized:${NC} gits pr create --title 'My PR' --base main"
+    echo -e "${BLUE}One-liner:${NC} gits pr create --title 'Update' --base main && gits pr merge --pr-number \$(gits pr-latest)"
+    echo -e "${BLUE}Current Branch:${NC} gits pr create --title 'My changes' --base main"
     echo -e "  ${BLUE}All standard Git commands are supported through automatic passthrough${NC}"
     echo -e "  ${BLUE}Example:${NC} gits status       → runs git status"
     echo -e "  ${BLUE}Example:${NC} gits log          → runs git log"
@@ -5323,7 +5556,7 @@ help() {
     echo -e "  ${GREEN}init-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Initialize multiple repositories at once"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username-repos and initializes all repos into it"
-    echo -e "                  ${BLUE}Note:${NC}    Default branch: 'development' (Gitea), 'main' (GitHub)"
+    echo -e "                  ${BLUE}Note:${NC}    Default branch: 'main' for all platforms"
     echo -e "                  ${BLUE}Example:${NC} gits init-list\n"
 }
 
