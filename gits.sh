@@ -1234,6 +1234,7 @@ pull-all() {
     local parallel=true
     local max_concurrent=5
     local verbose=false
+    local quiet=false
     local auto_merge=false
     local abort_on_conflict=false
     local strategy="merge"  # merge, rebase, or ff-only
@@ -1269,6 +1270,10 @@ pull-all() {
                 verbose=true
                 shift
                 ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
             --help|-h)
                 echo -e "${GREEN}Usage: gits pull-all [OPTIONS]${NC}"
                 echo -e "${BLUE}Pull updates from all repositories in current directory tree${NC}"
@@ -1280,6 +1285,7 @@ pull-all() {
                 echo -e "  --abort-on-conflict   Abort on first merge conflict"
                 echo -e "  --strategy STRATEGY   Merge strategy: merge, rebase, or ff-only (default: merge)"
                 echo -e "  -v, --verbose         Show detailed output"
+                echo -e "  -q, --quiet           Suppress output (except errors)"
                 echo -e "  -h, --help            Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
@@ -1379,9 +1385,9 @@ pull_repositories_sequential() {
                 ;;
             "no-updates")
                 if [[ "$verbose" == true ]]; then
-                    echo -e "  ${BLUE}ℹ️  No updates${NC}"
+                    echo -e "  ${GREEN}✅ No updates${NC}"
                 elif [[ "$quiet" == false ]]; then
-                    echo -e "  ${BLUE}ℹ️  No updates${NC}"
+                    echo -e "  ${GREEN}✅${NC}"
                 fi
                 ((success_count++))
                 ;;
@@ -1405,6 +1411,8 @@ pull_repositories_parallel() {
     local max_concurrent_local="${max_concurrent:-5}"
     local current_concurrent=0
     local pids=()
+    local verbose_local="${verbose:-false}"
+    local quiet_local="${quiet:-false}"
     
     for repo in "${repos[@]}"; do
         # Wait if we've reached the maximum concurrent processes
@@ -1428,54 +1436,54 @@ pull_repositories_parallel() {
             fi
         done
         
-        # Start pull in background
-        {
-            cd "$repo" 2>/dev/null || exit 3
+        # Start pull in background - capture quiet_local for subshell
+        quiet_local="$quiet_local" verbose_local="$verbose_local" bash -c '
+            cd "'"$repo"'" 2>/dev/null || exit 3
             
-            local verbose_prefix=""
-            if [[ "$verbose" == true ]]; then
-                verbose_prefix="${BLUE}📁 $repo${NC} - "
-            elif [[ "$quiet" == false ]]; then
-                verbose_prefix="Pulling $repo... "
+            # Source color codes
+            BLUE="\033[0;34m"
+            GREEN="\033[0;32m"
+            RED="\033[0;31m"
+            YELLOW="\033[38;5;208m"
+            NC="\033[0m"
+            
+            verbose_prefix=""
+            if [[ "$verbose_local" == true ]]; then
+                verbose_prefix="${BLUE}📁 '"$repo"'${NC} - "
+            elif [[ "$quiet_local" != true ]]; then
+                verbose_prefix="Pulling '"$repo"'... "
             fi
             
-            local result=$(perform_git_pull)
-            
-            case "$result" in
-                "success")
-                    if [[ "$verbose" == true ]]; then
-                        echo -e "${verbose_prefix}${GREEN}✅ Success${NC}"
-                    elif [[ "$quiet" == false ]]; then
-                        echo -e "${verbose_prefix}${GREEN}✅${NC}"
-                    fi
-                    exit 0
-                    ;;
-                "conflict")
-                    if [[ "$verbose" == true ]]; then
+            # Perform git pull
+            pull_cmd="git pull --no-rebase"
+            if $pull_cmd >/dev/null 2>/tmp/pull_error_$$; then
+                if [[ "$verbose_local" == true ]]; then
+                    echo -e "${verbose_prefix}${GREEN}✅ Success${NC}"
+                elif [[ "$quiet_local" != true ]]; then
+                    echo -e "${verbose_prefix}${GREEN}✅${NC}"
+                fi
+                exit 0
+            else
+                error_output=$(cat /tmp/pull_error_$$ 2>/dev/null)
+                rm -f /tmp/pull_error_$$
+                
+                if echo "$error_output" | grep -q "CONFLICT"; then
+                    if [[ "$verbose_local" == true ]]; then
                         echo -e "${verbose_prefix}${YELLOW}⚠️  Merge conflict${NC}"
-                    elif [[ "$quiet" == false ]]; then
+                    elif [[ "$quiet_local" != true ]]; then
                         echo -e "${verbose_prefix}${YELLOW}⚠️  Merge conflict${NC}"
                     fi
                     exit 1
-                    ;;
-                "no-updates")
-                    if [[ "$verbose" == true ]]; then
-                        echo -e "${verbose_prefix}${BLUE}ℹ️  No updates${NC}"
-                    elif [[ "$quiet" == false ]]; then
-                        echo -e "${verbose_prefix}${BLUE}ℹ️  No updates${NC}"
-                    fi
-                    exit 0
-                    ;;
-                "failed")
-                    if [[ "$verbose" == true ]]; then
+                else
+                    if [[ "$verbose_local" == true ]]; then
                         echo -e "${verbose_prefix}${RED}❌ Failed${NC}"
-                    elif [[ "$quiet" == false ]]; then
+                    elif [[ "$quiet_local" != true ]]; then
                         echo -e "${verbose_prefix}${RED}❌${NC}"
                     fi
                     exit 2
-                    ;;
-            esac
-        } &
+                fi
+            fi
+        ' &
         
         pids+=("$!")
         ((current_concurrent++))
