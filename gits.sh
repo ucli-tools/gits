@@ -825,6 +825,12 @@ set-all() {
                     echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
                     if git checkout -b "$target_branch"; then
                         echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
+                        # Push the new branch to set upstream and work across platforms
+                        if git push --set-upstream origin "$target_branch" 2>/dev/null; then
+                            echo -e "${GREEN}✅ Pushed new branch with upstream set${NC}"
+                        else
+                            echo -e "${ORANGE}⚠️  Could not push branch (will set upstream on first push)${NC}"
+                        fi
                         created=$((created + 1))
                     else
                         echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
