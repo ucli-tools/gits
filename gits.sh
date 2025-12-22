@@ -1571,7 +1571,10 @@ clone-all() {
     local parallel_cloning=true
     local max_concurrent=5
     local include_archived=false
-    
+    local assume_yes=false
+    local assume_cached=false
+    local assume_private=false
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1585,12 +1588,18 @@ clone-all() {
                 echo -e "  --no-parallel        Disable parallel cloning"
                 echo -e "  --max-concurrent N   Maximum concurrent clones (default: 5)"
                 echo -e "  --archived           Include archived repositories"
+                echo -e "  --yes, -y            Assume yes to all prompts (use cached tokens, access private repos)"
+                echo -e "  --cached             Automatically use cached tokens (skip token confirmation)"
+                echo -e "  --private            Automatically access private repos (skip private repo confirmation)"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
                 echo -e "  gits clone-all myusername"
                 echo -e "  gits clone-all github.com/myusername"
-                echo -e "  gits clone-all git.ourworld.tf/myorg --server git.ourworld.tf"
+                echo -e "  gits clone-all forge.ourworld.tf/myorg --server forge.ourworld.tf"
                 echo -e "  gits clone-all myusername --max-concurrent 10"
+                echo -e "  gits clone-all myusername --yes"
+                echo -e "  gits clone-all myusername --cached --private"
+                echo -e "  gits clone-all myusername --cached"
                 return 0
                 ;;
             --server)
@@ -1607,6 +1616,18 @@ clone-all() {
                 ;;
             --archived)
                 include_archived=true
+                shift
+                ;;
+            --yes|-y)
+                assume_yes=true
+                shift
+                ;;
+            --cached)
+                assume_cached=true
+                shift
+                ;;
+            --private)
+                assume_private=true
                 shift
                 ;;
             *)
@@ -1791,22 +1812,38 @@ clone-all() {
     case "$platform" in
         github)
             # GitHub repository access with proper private repo support
-            echo -e "${GREEN}Do you want to access private repositories? (y/n):${NC}"
-            echo -e "${BLUE}This allows cloning private repositories you have access to${NC}"
-            read -r use_auth_response
-            
-            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+            if [[ "$assume_yes" == true ]] || [[ "$assume_private" == true ]]; then
+                use_auth=true
+                echo -e "${BLUE}Assuming yes to private repository access${NC}"
+            else
+                echo -e "${GREEN}Do you want to access private repositories? (y/n):${NC}"
+                echo -e "${BLUE}This allows cloning private repositories you have access to${NC}"
+                read -r use_auth_response
+
+                if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                    use_auth=true
+                else
+                    use_auth=false
+                fi
+            fi
+
+            if [[ "$use_auth" == true ]]; then
                 # Check for cached token first
                 local cached_token=$(get_cached_token "github" "github.com")
                 
                 if [ -n "$cached_token" ]; then
-                    echo -e "${GREEN}Found cached authentication token for GitHub${NC}"
-                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                    read -r use_cached
-                    
-                    if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                    if [[ "$assume_yes" == true ]] || [[ "$assume_cached" == true ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
+                    else
+                        echo -e "${GREEN}Found cached authentication token for GitHub${NC}"
+                        echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                        read -r use_cached
+
+                        if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                            auth_header="Authorization: token $cached_token"
+                            echo -e "${BLUE}Using cached token${NC}"
+                        fi
                     fi
                 fi
                 
@@ -1893,22 +1930,38 @@ clone-all() {
             ;;
         forgejo)
             # Handle Forgejo authentication using cached token system
-            echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
-            echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
-            read -r use_auth_response
-            
-            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+            if [[ "$assume_yes" == true ]] || [[ "$assume_private" == true ]]; then
+                use_auth=true
+                echo -e "${BLUE}Assuming yes to private repository access${NC}"
+            else
+                echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
+                echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
+                read -r use_auth_response
+
+                if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                    use_auth=true
+                else
+                    use_auth=false
+                fi
+            fi
+
+            if [[ "$use_auth" == true ]]; then
                 # Use token caching system
                 local cached_token=$(get_cached_token "forgejo" "$server_url")
-                
+
                 if [ -n "$cached_token" ]; then
-                    echo -e "${GREEN}Found cached authentication token for $server_url${NC}"
-                    echo -e "${GREEN}Use cached token? (y/n):${NC}"
-                    read -r use_cached
-                    
-                    if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                    if [[ "$assume_yes" == true ]] || [[ "$assume_cached" == true ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
+                    else
+                        echo -e "${GREEN}Found cached authentication token for $server_url${NC}"
+                        echo -e "${GREEN}Use cached token? (y/n):${NC}"
+                        read -r use_cached
+
+                        if [[ "$use_cached" =~ ^[Yy]$ ]]; then
+                            auth_header="Authorization: token $cached_token"
+                            echo -e "${BLUE}Using cached token${NC}"
+                        fi
                     fi
                 fi
                 
@@ -2031,11 +2084,22 @@ clone-all() {
             ;;
         gitea)
             # Handle Gitea authentication using existing token system
-            echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
-            echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
-            read -r use_auth_response
-            
-            if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+            if [[ "$assume_yes" == true ]] || [[ "$assume_private" == true ]]; then
+                use_auth=true
+                echo -e "${BLUE}Assuming yes to private repository access${NC}"
+            else
+                echo -e "${GREEN}Do you want to access private and internal repositories? (y/n):${NC}"
+                echo -e "${BLUE}Note: This will also show organization repositories if '$username' is an organization${NC}"
+                read -r use_auth_response
+
+                if [[ "$use_auth_response" =~ ^[Yy]$ ]]; then
+                    use_auth=true
+                else
+                    use_auth=false
+                fi
+            fi
+
+            if [[ "$use_auth" == true ]]; then
                 # Use existing token caching system from save-issues
                 local cached_token=$(get_cached_gitea_token "$gitea_server")
                 
@@ -5443,16 +5507,18 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits clone https://github.com/org/repo"
     echo -e "                  ${BLUE}Example:${NC} gits clone org/repo\n"
     
-    echo -e "  ${GREEN}clone-all [URL|username]${NC}"
+    echo -e "  ${GREEN}clone-all [URL|username] [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user (interactive or with argument)"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
     echo -e "                  ${BLUE}Platforms:${NC} Forgejo (forge.ourworld.tf), Gitea (git.ourworld.tf), GitHub"
-    echo -e "                  ${BLUE}Options:${NC} --no-parallel, --max-concurrent N (default: 5)"
+    echo -e "                  ${BLUE}Options:${NC} --no-parallel, --max-concurrent N (default: 5), --yes/-y, --cached, --private"
+    echo -e "                  ${BLUE}Flag --yes/-y:${NC} Assume yes to all prompts (cached tokens + private repos)"
+    echo -e "                  ${BLUE}Flag --cached:${NC} Auto-use cached tokens (skip token confirmation)"
+    echo -e "                  ${BLUE}Flag --private:${NC} Auto-access private repos (skip private repo confirmation)"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all github.com/myusername"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all forge.ourworld.tf/myorg"
-    echo -e "                  ${BLUE}Example:${NC} gits clone-all git.ourworld.tf/myorg\n"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername --yes"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all github.com/myusername --cached --private"
+    echo -e "                  ${BLUE}Example:${NC} gits clone-all forge.ourworld.tf/myorg --yes\n"
     
     echo -e "  ${GREEN}clone-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user on selected platform"
