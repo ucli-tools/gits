@@ -706,11 +706,16 @@ push-all() {
  # Function to set a branch across all repositories
 set-all() {
     local target_branch=""
+    local suffix=""
     local dry_run=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
+            --suffix)
+                suffix="$2"
+                shift 2
+                ;;
             --dry-run|-n)
                 dry_run=true
                 shift
@@ -718,18 +723,22 @@ set-all() {
             --help|-h)
                 echo -e "${GREEN}Usage: gits set-all <branch-name> [OPTIONS]${NC}"
                 echo -e "${BLUE}Ensure all repositories in the current directory tree are on the same branch${NC}"
+                echo -e "${BLUE}Or rename all branches in all repositories by adding a suffix${NC}"
                 echo -e ""
                 echo -e "${PURPLE}Options:${NC}"
-                echo -e "  -n, --dry-run   Show what would be done without executing"
-                echo -e "  -h, --help      Show this help message"
+                echo -e "  --suffix SUFFIX  Rename all branches by adding suffix (e.g., --suffix -integration)"
+                echo -e "  -n, --dry-run    Show what would be done without executing"
+                echo -e "  -h, --help       Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
                 echo -e "  gits set-all feature/progress-123"
                 echo -e "  gits set-all release/1.0 --dry-run"
+                echo -e "  gits set-all --suffix -integration"
+                echo -e "  gits set-all --suffix -production --dry-run"
                 return 0
                 ;;
             *)
-                if [[ -z "$target_branch" ]]; then
+                if [[ -z "$target_branch" && -z "$suffix" ]]; then
                     target_branch="$1"
                     shift
                 else
@@ -741,124 +750,215 @@ set-all() {
         esac
     done
     
-    if [[ -z "$target_branch" ]]; then
-        echo -e "${RED}Error: Branch name is required.${NC}"
-        echo -e "Usage: gits set-all <branch-name> [OPTIONS]"
+    if [[ -z "$target_branch" && -z "$suffix" ]]; then
+        echo -e "${RED}Error: Either branch name or --suffix option is required.${NC}"
+        echo -e "Usage: gits set-all <branch-name> [OPTIONS] or gits set-all --suffix <suffix> [OPTIONS]"
         return 1
     fi
+
+    if [[ -n "$suffix" ]]; then
+        echo -e "${GREEN}Renaming all branches by adding suffix '${suffix}' across all repositories...${NC}"
+        echo -e ""
+    else
+        echo -e "${GREEN}Setting branch '${target_branch}' across all repositories...${NC}"
+        echo -e ""
+    fi
     
-    echo -e "${GREEN}Setting branch '${target_branch}' across all repositories...${NC}"
-    echo -e ""
-    
-    local total_repos=0
-    local created=0
-    local switched=0
-    local already_on_branch=0
-    local failed=0
-    
-    # Find all git repositories
-    while IFS= read -r -d '' gitdir; do
-        local repodir=$(dirname "$gitdir")
-        cd "$repodir" || continue
-        
-        total_repos=$((total_repos + 1))
-        
-        local current_branch
-        current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-        
-        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}📁 Repository: $repodir${NC} ($total_repos)"
-        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-        if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
-            echo -e "Current branch: ${GREEN}$current_branch${NC}"
-        else
-            echo -e "Current branch: ${ORANGE}(detached HEAD)${NC}"
-        fi
-        
-        if [[ "$current_branch" == "$target_branch" ]]; then
-            echo -e "${GREEN}Already on branch '${target_branch}'. Skipping.${NC}"
-            already_on_branch=$((already_on_branch + 1))
+    if [[ -n "$suffix" ]]; then
+        # Rename branches by adding suffix
+        local total_repos=0
+        local total_renames=0
+        local failed_renames=0
+
+        # Find all git repositories
+        while IFS= read -r -d '' gitdir; do
+            local repodir=$(dirname "$gitdir")
+            cd "$repodir" || continue
+
+            total_repos=$((total_repos + 1))
+
+            echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+            echo -e "${BLUE}📁 Repository: $repodir${NC} ($total_repos)"
+            echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+
+            # Get all local branches
+            local branches=()
+            while IFS= read -r branch; do
+                # Remove refs/heads/ prefix
+                branch=${branch#refs/heads/}
+                branches+=("$branch")
+            done < <(git for-each-ref --format='%(refname)' refs/heads 2>/dev/null)
+
+            if [[ ${#branches[@]} -eq 0 ]]; then
+                echo -e "${ORANGE}No local branches found in this repository.${NC}"
+                echo -e ""
+                cd - >/dev/null 2>&1
+                continue
+            fi
+
+            echo -e "Found ${#branches[@]} local branches: ${GREEN}${branches[*]}${NC}"
+            echo -e ""
+
+            local repo_renames=0
+            local repo_failed=0
+
+            for branch in "${branches[@]}"; do
+                local new_branch="${branch}${suffix}"
+
+                # Check if target branch name already exists
+                if git show-ref --verify --quiet "refs/heads/$new_branch"; then
+                    echo -e "${ORANGE}Branch '${new_branch}' already exists. Skipping rename of '${branch}'.${NC}"
+                    repo_failed=$((repo_failed + 1))
+                    continue
+                fi
+
+                if [[ "$dry_run" == true ]]; then
+                    echo -e "${ORANGE}[DRY RUN] Would rename '${branch}' to '${new_branch}'${NC}"
+                    repo_renames=$((repo_renames + 1))
+                else
+                    echo -e "${BLUE}Renaming '${branch}' to '${new_branch}'...${NC}"
+                    if git branch -m "$branch" "$new_branch"; then
+                        echo -e "${GREEN}✅ Renamed '${branch}' to '${new_branch}'${NC}"
+                        repo_renames=$((repo_renames + 1))
+                    else
+                        echo -e "${RED}❌ Failed to rename '${branch}' to '${new_branch}'${NC}"
+                        repo_failed=$((repo_failed + 1))
+                    fi
+                fi
+            done
+
+            total_renames=$((total_renames + repo_renames))
+            failed_renames=$((failed_renames + repo_failed))
+
             echo -e ""
             cd - >/dev/null 2>&1
-            continue
-        fi
-        
-        # Check if the branch already exists locally
-        if git show-ref --verify --quiet "refs/heads/$target_branch"; then
-            if [[ "$dry_run" == true ]]; then
-                echo -e "${ORANGE}[DRY RUN] Would switch to existing branch '${target_branch}'${NC}"
-                switched=$((switched + 1))
-            else
-                echo -e "${BLUE}Switching to existing branch '${target_branch}'...${NC}"
-                if git checkout "$target_branch"; then
-                    echo -e "${GREEN}Switched to existing branch '${target_branch}'.${NC}"
-                    switched=$((switched + 1))
-                else
-                    echo -e "${RED}❌ Failed to switch to branch '${target_branch}'.${NC}"
-                    failed=$((failed + 1))
-                fi
-            fi
-        else
-            # If no local branch, check for a matching remote branch (e.g., origin/$target_branch)
-            local remote_ref=""
-            remote_ref=$(git for-each-ref --format='%(refname:short)' "refs/remotes" 2>/dev/null | grep -E ".*/$target_branch$" | head -n 1)
+        done < <(find . -name .git -type d -print0)
 
-            if [[ -n "$remote_ref" ]]; then
+        if [[ $total_repos -eq 0 ]]; then
+            echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+            return 0
+        fi
+
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${PURPLE}Set-all Summary (Suffix Mode):${NC}"
+        echo -e "  Total repositories: $total_repos"
+        echo -e "  ${GREEN}Branches renamed: $total_renames${NC}"
+        if [[ "$failed_renames" -gt 0 ]]; then
+            echo -e "  ${RED}Failed renames: $failed_renames${NC}"
+        fi
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    else
+        # Original set-all logic for setting branches
+        local total_repos=0
+        local created=0
+        local switched=0
+        local already_on_branch=0
+        local failed=0
+
+        # Find all git repositories
+        while IFS= read -r -d '' gitdir; do
+            local repodir=$(dirname "$gitdir")
+            cd "$repodir" || continue
+
+            total_repos=$((total_repos + 1))
+
+            local current_branch
+            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+            echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+            echo -e "${BLUE}📁 Repository: $repodir${NC} ($total_repos)"
+            echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+            if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
+                echo -e "Current branch: ${GREEN}$current_branch${NC}"
+            else
+                echo -e "Current branch: ${ORANGE}(detached HEAD)${NC}"
+            fi
+
+            if [[ "$current_branch" == "$target_branch" ]]; then
+                echo -e "${GREEN}Already on branch '${target_branch}'. Skipping.${NC}"
+                already_on_branch=$((already_on_branch + 1))
+                echo -e ""
+                cd - >/dev/null 2>&1
+                continue
+            fi
+
+            # Check if the branch already exists locally
+            if git show-ref --verify --quiet "refs/heads/$target_branch"; then
                 if [[ "$dry_run" == true ]]; then
-                    echo -e "${ORANGE}[DRY RUN] Would checkout remote branch '${remote_ref}' as local '${target_branch}'${NC}"
+                    echo -e "${ORANGE}[DRY RUN] Would switch to existing branch '${target_branch}'${NC}"
                     switched=$((switched + 1))
                 else
-                    echo -e "${BLUE}Checking out remote branch '${remote_ref}' as local '${target_branch}'...${NC}"
-                    if git checkout -b "$target_branch" --track "$remote_ref"; then
-                        echo -e "${GREEN}Switched to branch '${target_branch}' tracking '${remote_ref}'.${NC}"
+                    echo -e "${BLUE}Switching to existing branch '${target_branch}'...${NC}"
+                    if git checkout "$target_branch"; then
+                        echo -e "${GREEN}Switched to existing branch '${target_branch}'.${NC}"
                         switched=$((switched + 1))
                     else
-                        echo -e "${RED}❌ Failed to checkout remote branch '${remote_ref}'.${NC}"
+                        echo -e "${RED}❌ Failed to switch to branch '${target_branch}'.${NC}"
                         failed=$((failed + 1))
                     fi
                 fi
             else
-                if [[ "$dry_run" == true ]]; then
-                    echo -e "${ORANGE}[DRY RUN] Would create and switch to new branch '${target_branch}' from current HEAD${NC}"
-                    created=$((created + 1))
-                else
-                    echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
-                    if git checkout -b "$target_branch"; then
-                        echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
-                        # Push the new branch to set upstream and work across platforms
-                        if git push --set-upstream origin "$target_branch" 2>/dev/null; then
-                            echo -e "${GREEN}✅ Pushed new branch with upstream set${NC}"
+                # If no local branch, check for a matching remote branch (e.g., origin/$target_branch)
+                local remote_ref=""
+                remote_ref=$(git for-each-ref --format='%(refname:short)' "refs/remotes" 2>/dev/null | grep -E ".*/$target_branch$" | head -n 1)
+
+                if [[ -n "$remote_ref" ]]; then
+                    if [[ "$dry_run" == true ]]; then
+                        echo -e "${ORANGE}[DRY RUN] Would checkout remote branch '${remote_ref}' as local '${target_branch}'${NC}"
+                        switched=$((switched + 1))
+                    else
+                        echo -e "${BLUE}Checking out remote branch '${remote_ref}' as local '${target_branch}'...${NC}"
+                        if git checkout -b "$target_branch" --track "$remote_ref"; then
+                            echo -e "${GREEN}Switched to branch '${target_branch}' tracking '${remote_ref}'.${NC}"
+                            switched=$((switched + 1))
                         else
-                            echo -e "${ORANGE}⚠️  Could not push branch (will set upstream on first push)${NC}"
+                            echo -e "${RED}❌ Failed to checkout remote branch '${remote_ref}'.${NC}"
+                            failed=$((failed + 1))
                         fi
+                    fi
+                else
+                    if [[ "$dry_run" == true ]]; then
+                        echo -e "${ORANGE}[DRY RUN] Would create and switch to new branch '${target_branch}' from current HEAD${NC}"
                         created=$((created + 1))
                     else
-                        echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
-                        failed=$((failed + 1))
+                        echo -e "${BLUE}Creating and switching to new branch '${target_branch}' from current HEAD...${NC}"
+                        if git checkout -b "$target_branch"; then
+                            echo -e "${GREEN}Created and switched to new branch '${target_branch}'.${NC}"
+                            # Push the new branch to set upstream and work across platforms
+                            if git push --set-upstream origin "$target_branch" 2>/dev/null; then
+                                echo -e "${GREEN}✅ Pushed new branch with upstream set${NC}"
+                            else
+                                echo -e "${ORANGE}⚠️  Could not push branch (will set upstream on first push)${NC}"
+                            fi
+                            created=$((created + 1))
+                        else
+                            echo -e "${RED}❌ Failed to create branch '${target_branch}'.${NC}"
+                            failed=$((failed + 1))
+                        fi
                     fi
                 fi
             fi
+
+            echo -e ""
+            cd - >/dev/null 2>&1
+        done < <(find . -name .git -type d -print0)
+
+        if [[ $total_repos -eq 0 ]]; then
+            echo -e "${YELLOW}No git repositories found in current directory.${NC}"
+            return 0
         fi
-        
-        echo -e ""
-        cd - >/dev/null 2>&1
-    done < <(find . -name .git -type d -print0)
-    
-    if [[ $total_repos -eq 0 ]]; then
-        echo -e "${YELLOW}No git repositories found in current directory.${NC}"
-        return 0
+
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+        echo -e "${PURPLE}Set-all Summary:${NC}"
+        echo -e "  Total repositories: $total_repos"
+        echo -e "  ${GREEN}Already on '${target_branch}': $already_on_branch${NC}"
+        echo -e "  ${GREEN}Switched to existing branch: $switched${NC}"
+        echo -e "  ${GREEN}Created new branch: $created${NC}"
+        if [[ "$failed" -gt 0 ]]; then
+            echo -e "  ${RED}Failed: $failed${NC}"
+        fi
+        echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
     fi
-    
-    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-    echo -e "${PURPLE}Set-all Summary:${NC}"
-    echo -e "  Total repositories: $total_repos"
-    echo -e "  ${GREEN}Already on '${target_branch}': $already_on_branch${NC}"
-    echo -e "  ${GREEN}Switched to existing branch: $switched${NC}"
-    echo -e "  ${GREEN}Created new branch: $created${NC}"
-    if [[ "$failed" -gt 0 ]]; then
-        echo -e "  ${RED}Failed: $failed${NC}"
-    fi
-    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
 }
 
 list-all() {
