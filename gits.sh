@@ -4477,7 +4477,10 @@ fetch-issues() {
     local state="open"
     local format="display"
     local repo_info=""
-    
+    local assume_yes=false
+    local assume_cached=false
+    local assume_private=false
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -4489,6 +4492,18 @@ fetch-issues() {
                 format="$2"
                 shift 2
                 ;;
+            --yes|-y)
+                assume_yes=true
+                shift
+                ;;
+            --cached)
+                assume_cached=true
+                shift
+                ;;
+            --private)
+                assume_private=true
+                shift
+                ;;
             --help|-h)
                 echo -e "${GREEN}Usage: gits fetch-issues [OPTIONS]${NC}"
                 echo -e "${BLUE}Fetch issues from the current repository${NC}"
@@ -4496,6 +4511,9 @@ fetch-issues() {
                 echo -e "${PURPLE}Options:${NC}"
                 echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
                 echo -e "  --format FORMAT  Output format: display, json (default: display)"
+                echo -e "  --yes, -y        Assume yes to all prompts (cached tokens + private issues)"
+                echo -e "  --cached         Auto-use cached tokens (skip token confirmation)"
+                echo -e "  --private        Auto-access private issues (skip private issue confirmation)"
                 echo -e "  -h, --help       Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
@@ -4503,6 +4521,8 @@ fetch-issues() {
                 echo -e "  gits fetch-issues --state all        # Fetch all issues"
                 echo -e "  gits fetch-issues --format json      # Fetch issues in JSON format"
                 echo -e "  gits fetch-issues --state closed     # Fetch closed issues"
+                echo -e "  gits fetch-issues --yes              # Auto-use cached tokens and access private issues"
+                echo -e "  gits fetch-issues --cached           # Auto-use cached tokens only"
                 return 0
                 ;;
             *)
@@ -4554,37 +4574,37 @@ fetch-issues() {
             
             # Check for authentication with token caching
             local auth_header=""
-            
+
             # Check for cached token first
             local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
-            
+
             if [ -n "$cached_token" ]; then
-                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]] || [[ "$assume_yes" == true ]] || [[ "$assume_cached" == true ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token for $forgejo_server (non-interactive)${NC}"
+                    echo -e "${BLUE}Using cached token for $forgejo_server${NC}"
                 else
                     echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
                     echo -e "${GREEN}Use cached token? (y/n):${NC}"
                     read -r use_cached
-                    
+
                     if [[ $use_cached =~ ^[Yy]$ ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
                     fi
                 fi
             fi
-            
+
             # If no cached token or user declined, prompt for authentication (interactive mode only)
-            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]] && [[ "$assume_yes" != true ]] && [[ "$assume_private" != true ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
-                
+
                 if [[ $use_auth =~ ^[Yy]$ ]]; then
                     echo -e "${GREEN}Enter your Forgejo API token:${NC}"
                     echo -e "${BLUE}Generate one at: https://$forgejo_server/user/settings/applications${NC}"
                     read -s API_TOKEN
                     echo
-                    
+
                     if [ -n "$API_TOKEN" ]; then
                         auth_header="Authorization: token $API_TOKEN"
                         save_token "forgejo" "$forgejo_server" "$API_TOKEN"
@@ -4849,7 +4869,10 @@ save-issues() {
     local state="open"
     local format="markdown"
     local output_dir=""
-    
+    local assume_yes=false
+    local assume_cached=false
+    local assume_private=false
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -4861,6 +4884,18 @@ save-issues() {
                 format="$2"
                 shift 2
                 ;;
+            --yes|-y)
+                assume_yes=true
+                shift
+                ;;
+            --cached)
+                assume_cached=true
+                shift
+                ;;
+            --private)
+                assume_private=true
+                shift
+                ;;
             --help|-h)
                 echo -e "${GREEN}Usage: gits save-issues [OPTIONS]${NC}"
                 echo -e "${BLUE}Save issues from the current repository to files${NC}"
@@ -4868,6 +4903,9 @@ save-issues() {
                 echo -e "${PURPLE}Options:${NC}"
                 echo -e "  --state STATE    Filter by state: open, closed, all (default: open)"
                 echo -e "  --format FORMAT  Output format: markdown, json, plain (default: markdown)"
+                echo -e "  --yes, -y        Assume yes to all prompts (cached tokens + private issues)"
+                echo -e "  --cached         Auto-use cached tokens (skip token confirmation)"
+                echo -e "  --private        Auto-access private issues (skip private issue confirmation)"
                 echo -e "  -h, --help       Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Output:${NC}"
@@ -4879,6 +4917,8 @@ save-issues() {
                 echo -e "  gits save-issues --state all         # Save all issues"
                 echo -e "  gits save-issues --format json       # Save issues in JSON format"
                 echo -e "  gits save-issues --state closed      # Save closed issues"
+                echo -e "  gits save-issues --yes               # Auto-use cached tokens and access private issues"
+                echo -e "  gits save-issues --cached            # Auto-use cached tokens only"
                 return 0
                 ;;
             *)
@@ -4941,37 +4981,37 @@ save-issues() {
             
             # Check for authentication with token caching
             local auth_header=""
-            
+
             # Check for cached token first
             local cached_token=$(get_cached_token "forgejo" "$forgejo_server")
-            
+
             if [ -n "$cached_token" ]; then
-                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
+                if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]] || [[ "$assume_yes" == true ]] || [[ "$assume_cached" == true ]]; then
                     auth_header="Authorization: token $cached_token"
-                    echo -e "${BLUE}Using cached token for $forgejo_server (non-interactive)${NC}"
+                    echo -e "${BLUE}Using cached token for $forgejo_server${NC}"
                 else
                     echo -e "${GREEN}Found cached authentication token for $forgejo_server${NC}"
                     echo -e "${GREEN}Use cached token? (y/n):${NC}"
                     read -r use_cached
-                    
+
                     if [[ $use_cached =~ ^[Yy]$ ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
                     fi
                 fi
             fi
-            
+
             # If no cached token or user declined, prompt for authentication (interactive mode only)
-            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
+            if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]] && [[ "$assume_yes" != true ]] && [[ "$assume_private" != true ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
-                
+
                 if [[ $use_auth =~ ^[Yy]$ ]]; then
                     echo -e "${GREEN}Enter your Forgejo API token:${NC}"
                     echo -e "${BLUE}Generate one at: https://$forgejo_server/user/settings/applications${NC}"
                     read -s API_TOKEN
                     echo
-                    
+
                     if [ -n "$API_TOKEN" ]; then
                         auth_header="Authorization: token $API_TOKEN"
                         save_token "forgejo" "$forgejo_server" "$API_TOKEN"
@@ -5526,11 +5566,15 @@ help() {
     echo -e "                  ${BLUE}Note:${NC}    Supports various URL formats including github.com and git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits clone-list\n"
     
-    echo -e "  ${GREEN}fetch-issues${NC}"
+    echo -e "  ${GREEN}fetch-issues [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Fetch issues from current repository and display in console"
-    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json)"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json), --yes/-y, --cached, --private"
+    echo -e "                  ${BLUE}Flag --yes/-y:${NC} Assume yes to all prompts (cached tokens + private issues)"
+    echo -e "                  ${BLUE}Flag --cached:${NC} Auto-use cached tokens (skip token confirmation)"
+    echo -e "                  ${BLUE}Flag --private:${NC} Auto-access private issues (skip private issue confirmation)"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues"
-    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --state all --format json\n"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --state all --format json"
+    echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --yes\n"
     
     echo -e "  ${GREEN}fetch-issues-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Fetch issues from all repositories in directory tree"
@@ -5538,12 +5582,16 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all --state all --format json\n"
     
-    echo -e "  ${GREEN}save-issues${NC}"
+    echo -e "  ${GREEN}save-issues [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Save issues to files in organized directory structure"
-    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain)"
+    echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain), --yes/-y, --cached, --private"
+    echo -e "                  ${BLUE}Flag --yes/-y:${NC} Assume yes to all prompts (cached tokens + private issues)"
+    echo -e "                  ${BLUE}Flag --cached:${NC} Auto-use cached tokens (skip token confirmation)"
+    echo -e "                  ${BLUE}Flag --private:${NC} Auto-access private issues (skip private issue confirmation)"
     echo -e "                  ${BLUE}Output:${NC} ./repo-name-issues/ directory with individual issue files"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues"
-    echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown\n"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown"
+    echo -e "                  ${BLUE}Example:${NC} gits save-issues --yes\n"
     
     echo -e "  ${GREEN}save-issues-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Save issues for all repositories to per-repository directories"
