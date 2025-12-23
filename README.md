@@ -29,7 +29,7 @@
 
 ## Introduction
 
-GitS is a bash script designed to streamline the git workflow by combining common git, gh and tea commands into quick, easy-to-use operations. It's perfect for developers who want to speed up their Git interactions and simplify their daily version control tasks.
+GitS is a bash script designed to streamline the git workflow by combining common git, gh and tea commands into quick, easy-to-use operations. It's perfect for developers who want to speed up their Git interactions and simplify their daily version control tasks. 
 
 ## Features
 
