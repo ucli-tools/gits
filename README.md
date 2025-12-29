@@ -172,15 +172,40 @@ After installation, you can use GitS with the following commands:
     ```bash
     # Interactive mode - prompts for each repository
     gits push-all
-    
+
     # Batch mode with custom message
     gits push-all --batch -m "Update documentation"
-    
+
     # Preview what would be done
     gits push-all --dry-run
-    
+
     # Use AI-generated commit messages
     gits push-all -py
+    ```
+
+- `gits diff-all <from-branch> <to-branch> [OPTIONS]` - Compare branches across all repositories
+  - **Cross-Repository Branch Comparison**: Shows differences between branches across multiple repositories
+  - **Flexible Output Modes**: Summary statistics or detailed diff output
+  - **Smart Branch Detection**: Checks if branches exist locally or remotely before comparison
+  - **Colorized Output**: Clear visual indicators for repositories with/without differences
+  - **Options:**
+    - `--detailed, -d` - Show full diff output (not just summary)
+    - `--quiet, -q` - Only show repositories with differences
+    - `--no-color` - Disable colored output
+    - `--help, -h` - Show help information
+  - **Examples:**
+    ```bash
+    # Show summary of differences between branches
+    gits diff-all main feature-branch
+
+    # Show detailed diff output for all repositories with differences
+    gits diff-all main develop --detailed
+
+    # Only show repositories that have differences
+    gits diff-all main main-update --quiet
+
+    # Compare main branch with feature branch
+    gits diff-all main feature/new-feature
     ```
 
 - `gits status-all [OPTIONS]` - Check git status across all repositories in directory tree

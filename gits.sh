@@ -1010,11 +1010,11 @@ list-all() {
     fi
 }
 
- # Function to check status of all repositories
+# Function to check status of all repositories
 status-all() {
     local show_clean=false
     local compact=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1038,7 +1038,7 @@ status-all() {
                 echo -e "${BLUE}Examples:${NC}"
                 echo -e "  gits status-all           # Show only repos needing attention"
                 echo -e "  gits status-all --all     # Show all repos with status"
-                echo -e "  gits status-all --compact # Show compact summary"
+                echo -e "  gits status-all --all --compact # Show compact summary"
                 return 0
                 ;;
             *)
@@ -1048,46 +1048,46 @@ status-all() {
                 ;;
         esac
     done
-    
+
     echo -e "${GREEN}Checking git repositories...${NC}"
     echo -e ""
-    
+
     local found_repos=0
     local dirty_repos=0
-    
+
     # Find all .git directories and process them
     while IFS= read -r -d '' gitdir; do
         local repodir=$(dirname "$gitdir")
         cd "$repodir" || continue
-        
+
         found_repos=$((found_repos + 1))
-        
+
         # Get repository status
         local status_output=$(git status --porcelain 2>/dev/null)
         local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
         unpushed=$(echo "$unpushed" | grep -o '^[0-9]*$' | head -1)
         [ -z "$unpushed" ] && unpushed="0"
         local has_changes=false
-        
+
         if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
             has_changes=true
             dirty_repos=$((dirty_repos + 1))
         fi
-        
+
         # Show repository info based on options
         if [[ "$has_changes" == true ]] || [[ "$show_clean" == true ]]; then
             if [[ "$compact" == true ]]; then
                 # Compact format
                 local status_icon="✅"
                 local status_text="[clean]"
-                
+
                 if [[ "$has_changes" == true ]]; then
                     status_icon="🔴"
                     status_text=""
                     [[ -n "$status_output" ]] && status_text="${status_text}[modified]"
                     [[ "$unpushed" -gt 0 ]] && status_text="${status_text}[+$unpushed ahead]"
                 fi
-                
+
                 printf "${status_icon} %-50s %s\n" "$repodir" "$status_text"
             else
                 # Detailed format
@@ -1103,10 +1103,10 @@ status-all() {
                 fi
             fi
         fi
-        
+
         cd - >/dev/null 2>&1
     done < <(find . -name .git -type d -print0)
-    
+
     # Summary
     echo -e ""
     echo -e "${PURPLE}Summary:${NC}"
@@ -1116,6 +1116,232 @@ status-all() {
     else
         echo -e "  ${GREEN}All repositories are clean!${NC}"
     fi
+}
+
+# Function to compare branches across all repositories
+diff-all() {
+    local from_branch=""
+    local to_branch=""
+    local suffix=""
+    local detailed=false
+    local quiet=false
+    local no_color=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --suffix)
+                suffix="$2"
+                shift 2
+                ;;
+            --detailed|-d)
+                detailed=true
+                shift
+                ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            --no-color)
+                no_color=true
+                shift
+                ;;
+            --help|-h)
+                echo -e "${GREEN}Usage: gits diff-all <from-branch> [to-branch] [OPTIONS]${NC}"
+                echo -e "${BLUE}Compare branches across all repositories in current directory tree${NC}"
+                echo -e ""
+                echo -e "${PURPLE}Arguments:${NC}"
+                echo -e "  from-branch    Source branch for comparison"
+                echo -e "  to-branch      Target branch for comparison (optional with --suffix)"
+                echo -e ""
+                echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --suffix SUFFIX  Compare base-branch with base-branch+suffix"
+                echo -e "  -d, --detailed    Show full diff output (not just summary)"
+                echo -e "  -q, --quiet       Only show repositories with differences"
+                echo -e "  --no-color        Disable colored output"
+                echo -e "  -h, --help        Show this help message"
+                echo -e ""
+                echo -e "${BLUE}Examples:${NC}"
+                echo -e "  gits diff-all main feature-branch              # Compare main vs feature-branch"
+                echo -e "  gits diff-all main --suffix -work-enhancements # Compare main vs main-work-enhancements"
+                echo -e "  gits diff-all dev --suffix -update --detailed  # Compare dev vs dev-update with full diff"
+                echo -e "  gits diff-all main main-update --quiet         # Only show repos with changes"
+                return 0
+                ;;
+            -*)
+                echo -e "${RED}Error: Unknown option '$1'${NC}"
+                echo -e "Use 'gits diff-all --help' for usage information."
+                return 1
+                ;;
+            *)
+                if [[ -z "$from_branch" ]]; then
+                    from_branch="$1"
+                elif [[ -z "$to_branch" ]]; then
+                    to_branch="$1"
+                else
+                    echo -e "${RED}Error: Too many arguments${NC}"
+                    echo -e "Use 'gits diff-all --help' for usage information."
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate required arguments and set defaults
+    if [[ -z "$from_branch" ]] && [[ -z "$suffix" ]]; then
+        echo -e "${RED}Error: Either from-branch or --suffix option is required${NC}"
+        echo -e "Use 'gits diff-all --help' for usage information."
+        return 1
+    fi
+
+    # If suffix is provided but no from_branch, we'll detect per-repo default branch
+    if [[ -n "$suffix" ]] && [[ -z "$from_branch" ]]; then
+        echo -e "${BLUE}Using each repository's default branch as base for suffix comparison${NC}"
+    fi
+
+    echo -e "${GREEN}Comparing branches '$from_branch' and '$to_branch' across all repositories...${NC}"
+    echo -e ""
+
+    local found_repos=0
+    local repos_with_diffs=0
+    local repos_without_diffs=0
+    local repos_missing_branches=0
+
+    # Find all .git directories and process them
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        cd "$repodir" || continue
+
+        found_repos=$((found_repos + 1))
+
+        # Resolve branch references (prefer local branches, fall back to remote)
+        local resolved_from_branch=""
+        local resolved_to_branch=""
+        local actual_from_branch="$from_branch"
+
+        # If using suffix-only mode, detect the default branch for this repository
+        if [[ -n "$suffix" ]] && [[ -z "$from_branch" ]]; then
+            # Try to get the default branch from remote HEAD
+            actual_from_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+            if [[ -z "$actual_from_branch" ]]; then
+                # Fallback: try common default branch names
+                for default_branch in "main" "master" "develop" "dev"; do
+                    if git show-ref --verify --quiet "refs/heads/$default_branch" 2>/dev/null || git show-ref --verify --quiet "refs/remotes/origin/$default_branch" 2>/dev/null; then
+                        actual_from_branch="$default_branch"
+                        break
+                    fi
+                done
+            fi
+
+            # If still no branch found, skip this repo
+            if [[ -z "$actual_from_branch" ]]; then
+                if [[ "$quiet" == false ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC}"
+                    echo -e "  ${RED}❌ Could not determine default branch${NC}"
+                    echo -e ""
+                fi
+                repos_missing_branches=$((repos_missing_branches + 1))
+                cd - >/dev/null 2>&1
+                continue
+            fi
+        fi
+
+        # Resolve from_branch
+        if git show-ref --verify --quiet "refs/heads/$actual_from_branch" 2>/dev/null; then
+            resolved_from_branch="$actual_from_branch"
+        elif git show-ref --verify --quiet "refs/remotes/origin/$actual_from_branch" 2>/dev/null; then
+            resolved_from_branch="origin/$actual_from_branch"
+        else
+            if [[ "$quiet" == false ]]; then
+                echo -e "${BLUE}📁 $repodir${NC}"
+                echo -e "  ${RED}❌ Branch '$actual_from_branch' not found${NC}"
+                echo -e ""
+            fi
+            repos_missing_branches=$((repos_missing_branches + 1))
+            cd - >/dev/null 2>&1
+            continue
+        fi
+
+        # Construct to_branch if using suffix
+        local actual_to_branch="$to_branch"
+        if [[ -n "$suffix" ]] && [[ -z "$to_branch" ]]; then
+            actual_to_branch="${actual_from_branch}${suffix}"
+        fi
+
+        # Resolve to_branch
+        if git show-ref --verify --quiet "refs/heads/$actual_to_branch" 2>/dev/null; then
+            resolved_to_branch="$actual_to_branch"
+        elif git show-ref --verify --quiet "refs/remotes/origin/$actual_to_branch" 2>/dev/null; then
+            resolved_to_branch="origin/$actual_to_branch"
+        else
+            if [[ "$quiet" == false ]]; then
+                echo -e "${BLUE}📁 $repodir${NC}"
+                echo -e "  ${RED}❌ Branch '$actual_to_branch' not found${NC}"
+                echo -e ""
+            fi
+            repos_missing_branches=$((repos_missing_branches + 1))
+            cd - >/dev/null 2>&1
+            continue
+        fi
+
+        # Check for differences using git diff --stat
+        local diff_stat=""
+        diff_stat=$(git diff --stat "$resolved_from_branch..$resolved_to_branch" 2>/dev/null)
+
+        if [[ -n "$diff_stat" ]]; then
+            # Repository has differences
+            repos_with_diffs=$((repos_with_diffs + 1))
+
+            echo -e "${BLUE}📁 $repodir${NC}"
+            echo -e "  ${GREEN}✅ Differences found${NC}"
+
+            # Show diff stat summary
+            if [[ -n "$diff_stat" ]]; then
+                # Extract the summary line from git diff --stat
+                local summary_line=$(echo "$diff_stat" | tail -1)
+                if [[ -n "$summary_line" ]]; then
+                    echo -e "  ${PURPLE}$summary_line${NC}"
+                fi
+            fi
+
+            # Show detailed diff if requested
+            if [[ "$detailed" == true ]]; then
+                echo -e "  ${ORANGE}Detailed diff:${NC}"
+                echo -e "  ──────────────────────────────────────────────────────────────────────────"
+                git diff "$resolved_from_branch..$resolved_to_branch" | sed 's/^/  /'
+                echo -e "  ──────────────────────────────────────────────────────────────────────────"
+            fi
+
+            echo -e ""
+        else
+            # Repository has no differences
+            repos_without_diffs=$((repos_without_diffs + 1))
+
+            if [[ "$quiet" == false ]]; then
+                echo -e "${BLUE}📁 $repodir${NC}"
+                echo -e "  ${GREEN}✅ No differences${NC}"
+                echo -e ""
+            fi
+        fi
+
+        cd - >/dev/null 2>&1
+    done < <(find . -name .git -type d -print0)
+
+    # Summary
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}Diff Summary:${NC}"
+    echo -e "  Total repositories: $found_repos"
+    if [[ "$repos_with_diffs" -gt 0 ]]; then
+        echo -e "  ${GREEN}Repositories with differences: $repos_with_diffs${NC}"
+    fi
+    if [[ "$repos_without_diffs" -gt 0 ]]; then
+        echo -e "  ${BLUE}Repositories without differences: $repos_without_diffs${NC}"
+    fi
+    if [[ "$repos_missing_branches" -gt 0 ]]; then
+        echo -e "  ${RED}Repositories missing branches: $repos_missing_branches${NC}"
+    fi
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
 }
 
 
@@ -5735,6 +5961,14 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits push-all"
     echo -e "                  ${BLUE}Example:${NC} gits push-all --batch -m \"Update documentation\"\n"
 
+    echo -e "  ${GREEN}diff-all <from-branch> <to-branch> [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Compare branches across all repositories in current directory tree"
+    echo -e "                  ${BLUE}Options:${NC} --detailed (show full diff), --quiet (only show repos with differences)"
+    echo -e "                  ${BLUE}Note:${NC}    Shows summary of differences between branches for all repositories"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all main feature-branch"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all main develop --detailed"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all main main-update --quiet\n"
+
     echo -e "  ${GREEN}set-all <branch-name>${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Create or switch to the same branch across all repositories"
     echo -e "                  ${BLUE}Options:${NC} --dry-run (preview changes without modifying branches)"
@@ -5916,6 +6150,10 @@ main() {
         push-all)
             shift
             push-all "$@"
+            ;;
+        diff-all)
+            shift
+            diff-all "$@"
             ;;
         install)
             install
