@@ -359,7 +359,7 @@ After installation, you can use GitS with the following commands:
 
 ### Pull Request Management
 - `gits pr create` - Create a new pull request
-  - Platform selection (GitHub/Gitea)
+  - Platform selection (GitHub/Gitea/Forgejo)
   - Custom title and description
   - Base and head branch selection
 - `gits pr close` - Close an existing pull request
@@ -369,6 +369,55 @@ After installation, you can use GitS with the following commands:
   - Custom merge commit messages
   - Branch cleanup options
   - Platform-specific merge handling
+- `gits pr create-all [OPTIONS]` - Create PRs across all repositories with differences
+  - **Smart Diff Detection**: Only creates PRs for repositories with actual code differences
+  - **Multiple Modes**:
+    - Suffix mode: `--suffix -qr` creates PRs from `{default}-qr` → base branch
+    - Explicit mode: `--head feature` creates PRs from `feature` → base branch
+    - Auto mode: Uses current branch as head
+  - **Options:**
+    - `--title TITLE` - PR title (required)
+    - `--base BRANCH` - Target branch to merge into (required)
+    - `--suffix SUFFIX` - Branch suffix mode (e.g., `-qr`, `-feature`)
+    - `--head BRANCH` - Explicit head branch name
+    - `--body TEXT` - PR description
+    - `--dry-run` - Preview what would be created without actually creating PRs
+  - **Examples:**
+    ```bash
+    # Dry run to preview PR creation
+    gits pr create-all --title "Feature X" --base main --suffix -qr --dry-run
+
+    # Create PRs from main-qr branches to main
+    gits pr create-all --title "QR Verification" --base main --suffix -qr
+
+    # Create PRs with explicit head branch
+    gits pr create-all --title "Update" --base main --head feature-branch
+
+    # Create PRs with description
+    gits pr create-all --title "Fix" --base main --body "Bug fixes"
+    ```
+
+- `gits pr merge-all [OPTIONS]` - Merge latest open PRs across all repositories
+  - **Automatic PR Detection**: Finds the latest open PR in each repository
+  - **Smart Skipping**: Skips repositories without open PRs
+  - **Options:**
+    - `--delete-branch, -d` - Delete head branch after merge
+    - `--dry-run` - Preview what would be merged without actually merging
+  - **Examples:**
+    ```bash
+    # Dry run to preview merges
+    gits pr merge-all --dry-run
+
+    # Merge all open PRs
+    gits pr merge-all
+
+    # Merge and delete branches
+    gits pr merge-all --delete-branch
+    ```
+
+- `gits pr-latest` - Get the latest PR number for current repository
+  - Works across all platforms (Forgejo/Gitea/GitHub)
+  - Useful for scripting: `gits pr merge --pr-number $(gits pr-latest)`
 
 
 ### Issue Management
