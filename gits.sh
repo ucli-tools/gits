@@ -21,15 +21,15 @@ save_gitea_token() {
     local token="$2"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     mkdir -p "$config_dir"
-    
+
     # Remove old token for this server
     if [ -f "$tokens_file" ]; then
         grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
         mv "$tokens_file.tmp" "$tokens_file" 2>/dev/null
     fi
-    
+
     # Add new token
     echo "$server=$token" >> "$tokens_file"
     chmod 600 "$tokens_file"
@@ -43,7 +43,7 @@ get_cached_token() {
     local server="$2"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     if [ -f "$tokens_file" ]; then
         case "$platform" in
             "github")
@@ -68,10 +68,10 @@ save_token() {
     local token="$3"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     # Ensure config directory exists
     mkdir -p "$config_dir"
-    
+
     # Create temp file and process tokens
     if [ -f "$tokens_file" ]; then
         # Remove existing token for this platform/server
@@ -85,7 +85,7 @@ save_token() {
         esac
         mv "$tokens_file.tmp" "$tokens_file"
     fi
-    
+
     # Add new token
     case "$platform" in
         "github")
@@ -95,7 +95,7 @@ save_token() {
             echo "$server=$token" >> "$tokens_file"
             ;;
     esac
-    
+
     chmod 600 "$tokens_file" 2>/dev/null
 }
 
@@ -105,7 +105,7 @@ clear_cached_token() {
     local server="$2"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     if [ -f "$tokens_file" ]; then
         case "$platform" in
             "github")
@@ -130,21 +130,21 @@ clear_cached_gitea_token() {
 # Get GitHub token from gh CLI
 get_github_token() {
     local token=""
-    
+
     # Method 1: Try gh auth status and token commands
     token=$(gh auth status --show-token 2>/dev/null | grep -oE 'ghp_[a-zA-Z0-9]{36}' | head -1)
     if [ -n "$token" ]; then
         echo "$token"
         return 0
     fi
-    
+
     # Method 2: Check gh config
     token=$(gh config get -h github.com oauth_token 2>/dev/null)
     if [ -n "$token" ]; then
         echo "$token"
         return 0
     fi
-    
+
     # Method 3: Parse gh configuration files
     local gh_config="$HOME/.config/gh/config.yml"
     if [ -f "$gh_config" ]; then
@@ -154,7 +154,7 @@ get_github_token() {
             return 0
         fi
     fi
-    
+
     return 1
 }
 
@@ -162,7 +162,7 @@ get_cached_gitea_token() {
     local server="$1"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     if [ -f "$tokens_file" ]; then
         grep "^$server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2
     fi
@@ -173,7 +173,7 @@ clear_cached_gitea_token() {
     local server="$1"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     if [ -f "$tokens_file" ]; then
         grep -v "^$server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
         mv "$tokens_file.tmp" "$tokens_file" 2>/dev/null
@@ -187,14 +187,14 @@ clear_cached_gitea_token() {
 get_tea_token() {
     local server="$1"
     local token=""
-    
+
     # Method 1: Try tea config command
     token=$(tea config get "auth.$server.token" 2>/dev/null)
     if [ -n "$token" ] && [ "$token" != "null" ]; then
         echo "$token"
         return 0
     fi
-    
+
     # Method 2: Parse tea config YAML file directly
     local tea_config="$HOME/.config/tea/config.yml"
     if [ -f "$tea_config" ]; then
@@ -205,7 +205,7 @@ get_tea_token() {
             return 0
         fi
     fi
-    
+
     # Method 3: Try alternative config location
     tea_config="$HOME/.tea/config.yml"
     if [ -f "$tea_config" ]; then
@@ -215,7 +215,7 @@ get_tea_token() {
             return 0
         fi
     fi
-    
+
     return 1
 }
 
@@ -225,13 +225,13 @@ token() {
     local server="$2"
     local config_dir=$(get_gits_config_dir)
     local tokens_file="$config_dir/tokens.conf"
-    
+
     case "$action" in
         list)
             echo -e "${GREEN}Cached tokens:${NC}"
             echo -e "${BLUE}Location: $tokens_file${NC}"
             echo -e ""
-            
+
             if [ -f "$tokens_file" ]; then
                 while IFS='=' read -r server_name token_value; do
                     if [ -n "$server_name" ] && [ -n "$token_value" ]; then
@@ -247,7 +247,7 @@ token() {
         show)
             local target_server="${server:-forge.ourworld.tf}"
             echo -e "${GREEN}Token for $target_server:${NC}"
-            
+
             if [ -f "$tokens_file" ]; then
                 local token=$(grep "^$target_server=" "$tokens_file" 2>/dev/null | cut -d'=' -f2)
                 if [ -n "$token" ]; then
@@ -263,7 +263,7 @@ token() {
         clear)
             local target_server="${server:-forge.ourworld.tf}"
             echo -e "${GREEN}Clearing token for $target_server...${NC}"
-            
+
             if [ -f "$tokens_file" ]; then
                 grep -v "^$target_server=" "$tokens_file" > "$tokens_file.tmp" 2>/dev/null || true
                 mv "$tokens_file.tmp" "$tokens_file"
@@ -296,7 +296,7 @@ detect_platform() {
         echo -e "${RED}Error: No git remote found${NC}"
         return 1
     fi
-    
+
     if [[ "$remote_url" == *"forge.ourworld.tf"* ]] || [[ "$remote_url" == *"forgejo"* ]]; then
         echo "forgejo"
         return 0
@@ -319,7 +319,7 @@ get_repo_info() {
         echo -e "${RED}Error: No git remote found${NC}"
         return 1
     fi
-    
+
     local repo_path=""
     if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*forge\.ourworld\.tf[:/](.*)(\.git)?|\1|')
@@ -328,10 +328,10 @@ get_repo_info() {
     elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
     fi
-    
+
     local owner=$(echo "$repo_path" | cut -d'/' -f1)
     local repo=$(echo "$repo_path" | cut -d'/' -f2)
-    
+
     echo "$owner/$repo"
     return 0
 }
@@ -402,7 +402,7 @@ push-all() {
     local skip_confirmation=false
     local use_pal=false
     local use_pal_yolo=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -458,23 +458,23 @@ push-all() {
                 ;;
         esac
     done
-    
+
     # Auto-enable skip_confirmation when using -py (yolo mode)
     if [[ "$use_pal_yolo" == true ]]; then
         skip_confirmation=true
     fi
-    
+
     echo -e "${GREEN}Finding repositories with changes...${NC}"
     echo -e ""
-    
+
     local dirty_repos=()
     local repo_info=()
-    
+
     # Find all dirty repositories
     while IFS= read -r -d '' gitdir; do
         local repodir=$(dirname "$gitdir")
         cd "$repodir" || continue
-        
+
         local status_output=$(git status --porcelain 2>/dev/null)
         local unpushed=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
 
@@ -482,31 +482,31 @@ push-all() {
         if ! [[ "$unpushed" =~ ^[0-9]+$ ]]; then
             unpushed=0
         fi
-        
+
         if [[ -n "$status_output" ]] || [[ "$unpushed" -gt 0 ]]; then
             dirty_repos+=("$repodir")
             repo_info+=("$status_output|$unpushed")
         fi
-        
+
         cd - >/dev/null 2>&1
     done < <(find . -name .git -type d -print0)
-    
+
     if [[ ${#dirty_repos[@]} -eq 0 ]]; then
         echo -e "${GREEN}✅ All repositories are clean! Nothing to push.${NC}"
         return 0
     fi
-    
+
     echo -e "${ORANGE}Found ${#dirty_repos[@]} repositories with changes:${NC}"
     for i in "${!dirty_repos[@]}"; do
         echo -e "  ${BLUE}$((i+1)). ${dirty_repos[i]}${NC}"
     done
     echo -e ""
-    
+
     if [[ "$dry_run" == true ]]; then
         echo -e "${ORANGE}DRY RUN MODE - No changes will be made${NC}"
         echo -e ""
     fi
-    
+
     # Get batch commit message if in batch mode
     if [[ "$batch_mode" == true ]] && [[ -z "$default_message" ]]; then
         echo -e "${GREEN}Enter commit message for all repositories:${NC}"
@@ -516,12 +516,12 @@ push-all() {
             return 1
         fi
     fi
-    
+
     # Process each repository
     local processed=0
     local skipped=0
     local failed=0
-    
+
     for i in "${!dirty_repos[@]}"; do
         local repodir="${dirty_repos[i]}"
         local info="${repo_info[i]}"
@@ -532,25 +532,25 @@ push-all() {
         if ! [[ "$unpushed" =~ ^[0-9]+$ ]]; then
             unpushed=0
         fi
-        
+
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         echo -e "${BLUE}📁 Repository: $repodir${NC} ($((i+1))/${#dirty_repos[@]})"
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-        
+
         cd "$repodir" || continue
-        
+
         # Show current status
         if [[ -n "$status_output" ]]; then
             echo -e "${ORANGE}Uncommitted changes:${NC}"
             git status --short
         fi
-        
+
         if [[ "$unpushed" -gt 0 ]]; then
             echo -e "${ORANGE}Unpushed commits: $unpushed${NC}"
         fi
-        
+
         echo -e ""
-        
+
         # Skip confirmation in batch mode with --yes or when using -py
         if [[ "$skip_confirmation" == true ]]; then
             action="y"
@@ -561,7 +561,7 @@ push-all() {
             echo -e "${GREEN}Actions: (y)es, (n)o, (s)kip, (q)uit${NC}"
             read -r action
         fi
-        
+
         case "$action" in
             y|Y|yes|Yes)
                 if [[ "$dry_run" == true ]]; then
@@ -571,7 +571,7 @@ push-all() {
                     # Get commit message
                     local commit_msg="$default_message"
                     local commit_success=false
-                    
+
                     # Handle commit based on pal flags
                     if [[ "$use_pal_yolo" == true ]]; then
                         echo -e "${BLUE}Using pal /commit -y for AI-generated commit message (auto-commit)${NC}"
@@ -633,7 +633,7 @@ push-all() {
                                 commit_msg="Update $(basename "$repodir"): $(date '+%Y-%m-%d %H:%M')"
                             fi
                         fi
-                        
+
                         echo -e "${BLUE}Adding changes...${NC}"
                         if git add -A; then
                             echo -e "${BLUE}Committing with message: \"$commit_msg\"${NC}"
@@ -652,7 +652,7 @@ push-all() {
                             continue
                         fi
                     fi
-                    
+
                     # Push if commit was successful
                     if [[ "$commit_success" == true ]]; then
                         echo -e "${BLUE}Pushing to remote...${NC}"
@@ -687,11 +687,11 @@ push-all() {
                 skipped=$((skipped + 1))
                 ;;
         esac
-        
+
         echo -e ""
         cd - >/dev/null 2>&1
     done
-    
+
     # Final summary
     echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
     echo -e "${PURPLE}Summary:${NC}"
@@ -749,7 +749,7 @@ set-all() {
                 ;;
         esac
     done
-    
+
     if [[ -z "$target_branch" && -z "$suffix" ]]; then
         echo -e "${RED}Error: Either branch name or --suffix option is required.${NC}"
         echo -e "Usage: gits set-all <branch-name> [OPTIONS] or gits set-all --suffix <suffix> [OPTIONS]"
@@ -763,7 +763,7 @@ set-all() {
         echo -e "${GREEN}Setting branch '${target_branch}' across all repositories...${NC}"
         echo -e ""
     fi
-    
+
     if [[ -n "$suffix" ]]; then
         # Rename branches by adding suffix
         local total_repos=0
@@ -1359,7 +1359,7 @@ fetch-all() {
     local verbose=false
     local fetch_tags=true
     local quiet=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1410,36 +1410,36 @@ fetch-all() {
                 ;;
         esac
     done
-    
+
     echo -e "${GREEN}Fetching updates from all repositories...${NC}"
     echo -e ""
-    
+
     # Collect all repository directories
     local repos=()
     while IFS= read -r -d '' gitdir; do
         repos+=("$(dirname "$gitdir")")
     done < <(find . -name .git -type d -print0)
-    
+
     if [[ ${#repos[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No git repositories found in current directory.${NC}"
         return 0
     fi
-    
+
     local total_repos=${#repos[@]}
     # Make counters global for helper functions
     success_count=0
     failed_count=0
-    
+
     if [[ "$quiet" == true ]]; then
         echo -e "${BLUE}Processing $total_repos repositories...${NC}"
     fi
-    
+
     if [[ "$parallel" == true ]]; then
         fetch_repositories_parallel "${repos[@]}"
     else
         fetch_repositories_sequential "${repos[@]}"
     fi
-    
+
     # Summary
     echo -e ""
     echo -e "${PURPLE}Fetch Summary:${NC}"
@@ -1456,20 +1456,20 @@ fetch-all() {
 fetch_repositories_sequential() {
     local repos=("$@")
     local fetch_cmd="git fetch"
-    
+
     if [[ "$fetch_tags" == false ]]; then
         fetch_cmd="$fetch_cmd --no-tags"
     fi
-    
+
     for repo in "${repos[@]}"; do
         if [[ "$verbose" == true ]]; then
             echo -e "${BLUE}📁 $repo${NC}"
         elif [[ "$quiet" == false ]]; then
             echo -e "${PURPLE}Fetching $repo...${NC}"
         fi
-        
+
         cd "$repo" || continue
-        
+
         if $fetch_cmd 2>/dev/null; then
             ((success_count++))
             if [[ "$verbose" == true ]]; then
@@ -1485,7 +1485,7 @@ fetch_repositories_sequential() {
                 echo -e "  ${RED}❌ Failed${NC}"
             fi
         fi
-        
+
         cd - >/dev/null 2>&1
     done
 }
@@ -1497,11 +1497,11 @@ fetch_repositories_parallel() {
     local current_concurrent=0
     local pids=()
     local fetch_cmd="git fetch"
-    
+
     if [[ "$fetch_tags" == false ]]; then
         fetch_cmd="$fetch_cmd --no-tags"
     fi
-    
+
     for repo in "${repos[@]}"; do
         # Wait if we've reached the maximum concurrent processes
         while [[ $current_concurrent -ge $max_concurrent_local ]]; do
@@ -1523,18 +1523,18 @@ fetch_repositories_parallel() {
                 sleep 0.1
             fi
         done
-        
+
         # Start fetch in background
         {
             cd "$repo" 2>/dev/null || exit 1
-            
+
             local verbose_prefix=""
             if [[ "$verbose" == true ]]; then
                 verbose_prefix="${BLUE}📁 $repo${NC} - "
             elif [[ "$quiet" == false ]]; then
                 verbose_prefix="Fetching $repo... "
             fi
-            
+
             if $fetch_cmd 2>/dev/null; then
                 if [[ "$verbose" == true ]]; then
                     echo -e "${verbose_prefix}${GREEN}✅ Success${NC}"
@@ -1551,11 +1551,11 @@ fetch_repositories_parallel() {
                 exit 1
             fi
         } &
-        
+
         pids+=("$!")
         ((current_concurrent++))
     done
-    
+
     # Wait for all remaining background processes
     for pid in "${pids[@]}"; do
         wait "$pid"
@@ -1577,7 +1577,7 @@ pull-all() {
     local auto_merge=false
     local abort_on_conflict=false
     local strategy="merge"  # merge, rebase, or ff-only
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1642,33 +1642,33 @@ pull-all() {
                 ;;
         esac
     done
-    
+
     echo -e "${GREEN}Pulling updates from all repositories...${NC}"
     echo -e ""
-    
+
     # Collect all repository directories
     local repos=()
     while IFS= read -r -d '' gitdir; do
         repos+=("$(dirname "$gitdir")")
     done < <(find . -name .git -type d -print0)
-    
+
     if [[ ${#repos[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No git repositories found in current directory.${NC}"
         return 0
     fi
-    
+
     local total_repos=${#repos[@]}
     # Make counters global for helper functions
     success_count=0
     conflict_count=0
     failed_count=0
-    
+
     if [[ "$parallel" == true ]]; then
         pull_repositories_parallel "${repos[@]}"
     else
         pull_repositories_sequential "${repos[@]}"
     fi
-    
+
     # Summary
     echo -e ""
     echo -e "${PURPLE}Pull Summary:${NC}"
@@ -1687,18 +1687,18 @@ pull-all() {
 # Helper function for sequential repository pulling
 pull_repositories_sequential() {
     local repos=("$@")
-    
+
     for repo in "${repos[@]}"; do
         if [[ "$verbose" == true ]]; then
             echo -e "${BLUE}📁 $repo${NC}"
         elif [[ "$quiet" == false ]]; then
             echo -e "${PURPLE}Pulling $repo...${NC}"
         fi
-        
+
         cd "$repo" || continue
-        
+
         local result=$(perform_git_pull)
-        
+
         case "$result" in
             "success")
                 ((success_count++))
@@ -1715,7 +1715,7 @@ pull_repositories_sequential() {
                 elif [[ "$quiet" == false ]]; then
                     echo -e "  ${YELLOW}⚠️  Merge conflict${NC}"
                 fi
-                
+
                 if [[ "$abort_on_conflict" == true ]]; then
                     echo -e "${RED}Aborting due to --abort-on-conflict flag.${NC}"
                     git merge --abort 2>/dev/null
@@ -1739,7 +1739,7 @@ pull_repositories_sequential() {
                 fi
                 ;;
         esac
-        
+
         cd - >/dev/null 2>&1
     done
 }
@@ -1752,7 +1752,7 @@ pull_repositories_parallel() {
     local pids=()
     local verbose_local="${verbose:-false}"
     local quiet_local="${quiet:-false}"
-    
+
     for repo in "${repos[@]}"; do
         # Wait if we've reached the maximum concurrent processes
         while [[ $current_concurrent -ge $max_concurrent_local ]]; do
@@ -1774,25 +1774,25 @@ pull_repositories_parallel() {
                 sleep 0.1
             fi
         done
-        
+
         # Start pull in background - capture quiet_local for subshell
         quiet_local="$quiet_local" verbose_local="$verbose_local" bash -c '
             cd "'"$repo"'" 2>/dev/null || exit 3
-            
+
             # Source color codes
             BLUE="\033[0;34m"
             GREEN="\033[0;32m"
             RED="\033[0;31m"
             YELLOW="\033[38;5;208m"
             NC="\033[0m"
-            
+
             verbose_prefix=""
             if [[ "$verbose_local" == true ]]; then
                 verbose_prefix="${BLUE}📁 '"$repo"'${NC} - "
             elif [[ "$quiet_local" != true ]]; then
                 verbose_prefix="Pulling '"$repo"'... "
             fi
-            
+
             # Perform git pull
             pull_cmd="git pull --no-rebase"
             if $pull_cmd >/dev/null 2>/tmp/pull_error_$$; then
@@ -1805,7 +1805,7 @@ pull_repositories_parallel() {
             else
                 error_output=$(cat /tmp/pull_error_$$ 2>/dev/null)
                 rm -f /tmp/pull_error_$$
-                
+
                 if echo "$error_output" | grep -q "CONFLICT"; then
                     if [[ "$verbose_local" == true ]]; then
                         echo -e "${verbose_prefix}${YELLOW}⚠️  Merge conflict${NC}"
@@ -1823,11 +1823,11 @@ pull_repositories_parallel() {
                 fi
             fi
         ' &
-        
+
         pids+=("$!")
         ((current_concurrent++))
     done
-    
+
     # Wait for all remaining background processes
     for pid in "${pids[@]}"; do
         wait "$pid"
@@ -1843,7 +1843,7 @@ pull_repositories_parallel() {
 # Helper function to perform git pull with strategy and conflict handling
 perform_git_pull() {
     local pull_cmd="git pull"
-    
+
     # Set strategy based on option
     case "$strategy" in
         "rebase")
@@ -1856,7 +1856,7 @@ perform_git_pull() {
             pull_cmd="$pull_cmd --no-rebase"
             ;;
     esac
-    
+
     # Try to pull
     if $pull_cmd 2>/tmp/pull_error_$$; then
         # Check if there were any updates
@@ -1868,7 +1868,7 @@ perform_git_pull() {
     else
         local error_output=$(cat /tmp/pull_error_$$ 2>/dev/null)
         rm -f /tmp/pull_error_$$
-        
+
         # Check for merge conflict
         if echo "$error_output" | grep -q "CONFLICT"; then
             if [[ "$auto_merge" == true ]]; then
@@ -1891,7 +1891,7 @@ perform_git_pull() {
             echo "failed"
         fi
     fi
-    
+
     rm -f /tmp/pull_error_$$
 }
 
@@ -1969,7 +1969,7 @@ clone-all() {
                 ;;
         esac
     done
-    
+
     # Detect platform and extract username if not provided
     local is_org=false
     local server_url=""  # Generic server URL for Forgejo/Gitea
@@ -2096,7 +2096,7 @@ clone-all() {
             return 1
         fi
     fi
-    
+
     # Validate platform
     case "$platform" in
         forgejo|github|gitea)
@@ -2110,7 +2110,7 @@ clone-all() {
             return 1
             ;;
     esac
-    
+
     # Validate dependencies
     case "$platform" in
         github)
@@ -2131,16 +2131,16 @@ clone-all() {
             fi
             ;;
     esac
-    
+
     # Create directory for cloning
     mkdir -p "$username"
     cd "$username" || return 1
-    
+
     local repos_json=""
     local auth_header=""
-    
+
     echo -e "\n${BLUE}Fetching repositories...${NC}"
-    
+
     # Fetch repositories using platform-specific method
     case "$platform" in
         github)
@@ -2163,7 +2163,7 @@ clone-all() {
             if [[ "$use_auth" == true ]]; then
                 # Check for cached token first
                 local cached_token=$(get_cached_token "github" "github.com")
-                
+
                 if [ -n "$cached_token" ]; then
                     if [[ "$assume_yes" == true ]] || [[ "$assume_cached" == true ]]; then
                         auth_header="Authorization: token $cached_token"
@@ -2179,7 +2179,7 @@ clone-all() {
                         fi
                     fi
                 fi
-                
+
                 # If no cached token or user declined, get from gh CLI
                 if [ -z "$auth_header" ]; then
                     if ! command -v gh &> /dev/null; then
@@ -2188,10 +2188,10 @@ clone-all() {
                         cd - > /dev/null
                         return 1
                     fi
-                    
+
                     echo -e "${GREEN}Checking GitHub CLI authentication...${NC}"
                     local github_token=$(get_github_token)
-                    
+
                     if [ -n "$github_token" ]; then
                         auth_header="Authorization: token $github_token"
                         save_token "github" "github.com" "$github_token"
@@ -2203,17 +2203,17 @@ clone-all() {
                         return 1
                     fi
                 fi
-                
+
                 # Use GitHub CLI for private repository access (better permission handling)
                 echo -e "${BLUE}Fetching repositories using GitHub CLI...${NC}"
-                
+
                 # Test token scopes by trying to access repos
                 local test_result=$(gh repo list "$username" --json=id,name,clone_url,private,visibility --limit 1 2>&1)
                 local test_exit_code=$?
-                
+
                 if [ $test_exit_code -ne 0 ]; then
                     echo -e "${RED}Failed to access repositories.${NC}"
-                    
+
                     # Check for scope-related errors
                     if echo "$test_result" | grep -qi "scope\|permission\|unauthorized\|forbidden"; then
                         echo -e "${YELLOW}Token scopes may be insufficient.${NC}"
@@ -2225,7 +2225,7 @@ clone-all() {
                         echo -e "  2. Edit your token and add missing scopes"
                         echo -e "  3. Or run: gh auth login --with-token"
                         echo -e "${ORANGE}Falling back to public repository access only.${NC}"
-                        
+
                         # Fallback to public access
                         repos_json=$(curl -s "https://api.github.com/users/$username/repos?per_page=100&type=all" 2>/dev/null)
                         if ! echo "$repos_json" | jq . &>/dev/null; then
@@ -2251,7 +2251,7 @@ clone-all() {
                 # Public access only - use GitHub API
                 echo -e "${BLUE}Fetching public repositories using GitHub API...${NC}"
                 repos_json=$(curl -s "https://api.github.com/users/$username/repos?per_page=100&type=all" 2>/dev/null)
-                
+
                 # Validate response
                 if ! echo "$repos_json" | jq . &>/dev/null; then
                     echo -e "${RED}Failed to fetch repositories from GitHub.${NC}"
@@ -2297,14 +2297,14 @@ clone-all() {
                         fi
                     fi
                 fi
-                
+
                 # If no cached token or user declined, prompt for token
                 if [ -z "$auth_header" ]; then
                     echo -e "${GREEN}Enter your Forgejo API token:${NC}"
                     echo -e "${BLUE}Generate one at: https://$server_url/user/settings/applications${NC}"
                     read -s API_TOKEN
                     echo
-                    
+
                     if [ -n "$API_TOKEN" ]; then
                         auth_header="Authorization: token $API_TOKEN"
                         save_token "forgejo" "$server_url" "$API_TOKEN"
@@ -2316,7 +2316,7 @@ clone-all() {
                     fi
                 fi
             fi
-            
+
             # Construct API endpoint (Forgejo uses same API as Gitea)
             local base_url
             if [[ "$server_url" != http* ]]; then
@@ -2324,12 +2324,12 @@ clone-all() {
             else
                 base_url="$server_url"
             fi
-            
+
             # Smart endpoint selection based on whether we want organization or user repos
             local primary_endpoint=""
             local secondary_endpoints=()
             local endpoint_names=()
-            
+
             if [[ "$is_org" == true ]]; then
                 # For organizations, prefer org endpoint first
                 echo -e "${BLUE}Detected organization request for '$username'${NC}"
@@ -2346,12 +2346,12 @@ clone-all() {
                     endpoint_names+=("authenticated_user")
                 fi
             fi
-            
+
             local found_repos=false
             local best_response=""
             local best_endpoint=""
             local best_count=0
-            
+
             # Try primary endpoint first
             echo -e "${BLUE}Trying primary endpoint: ${endpoint_names[0]}${NC}"
             local response=""
@@ -2360,7 +2360,7 @@ clone-all() {
             else
                 response=$(curl -s "$primary_endpoint")
             fi
-            
+
             # Validate primary response
             if echo "$response" | jq . &>/dev/null; then
                 local repo_count=$(echo "$response" | jq 'length')
@@ -2376,22 +2376,22 @@ clone-all() {
             else
                 echo -e "${ORANGE}Invalid response from ${endpoint_names[0]} endpoint${NC}"
             fi
-            
+
             # Try secondary endpoints only if primary didn't work well
             if [ "$found_repos" = false ]; then
                 for i in "${!secondary_endpoints[@]}"; do
                     local api_endpoint="${secondary_endpoints[i]}"
                     local endpoint_name="${endpoint_names[i+1]}"
-                    
+
                     echo -e "${BLUE}Trying secondary endpoint: $endpoint_name${NC}"
-                    
+
                     local response=""
                     if [ -n "$auth_header" ]; then
                         response=$(curl -s -H "$auth_header" "$api_endpoint")
                     else
                         response=$(curl -s "$api_endpoint")
                     fi
-                    
+
                     if echo "$response" | jq . &>/dev/null; then
                         local repo_count=$(echo "$response" | jq 'length')
                         if [ "$repo_count" -gt "$best_count" ]; then
@@ -2404,14 +2404,14 @@ clone-all() {
                     fi
                 done
             fi
-            
+
             if [ "$found_repos" = false ]; then
                 echo -e "${RED}Failed to fetch repositories from Forgejo.${NC}"
                 echo -e "${ORANGE}Please check your username/organization and try again.${NC}"
                 cd - > /dev/null
                 return 1
             fi
-            
+
             repos_json="$best_response"
             echo -e "${GREEN}Using $best_endpoint endpoint with $best_count repositories${NC}"
             ;;
@@ -2435,25 +2435,25 @@ clone-all() {
             if [[ "$use_auth" == true ]]; then
                 # Use existing token caching system from save-issues
                 local cached_token=$(get_cached_gitea_token "$gitea_server")
-                
+
                 if [ -n "$cached_token" ]; then
                     echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
                     echo -e "${GREEN}Use cached token? (y/n):${NC}"
                     read -r use_cached
-                    
+
                     if [[ "$use_cached" =~ ^[Yy]$ ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
                     fi
                 fi
-                
+
                 # If no cached token or user declined, prompt for authentication
                 if [ -z "$auth_header" ]; then
                     echo -e "${GREEN}Choose authentication method:${NC}"
                     echo -e "1) Use existing Gitea login (via tea CLI)"
                     echo -e "2) Provide an API token (will be cached for future use)"
                     read -p "Enter your choice (1/2): " auth_choice
-                    
+
                     case "$auth_choice" in
                         1)
                             if ! command -v tea &> /dev/null; then
@@ -2461,7 +2461,7 @@ clone-all() {
                                 cd - > /dev/null
                                 return 1
                             fi
-                            
+
                             local gitea_token=$(get_tea_token "$gitea_server")
                             if [ -n "$gitea_token" ]; then
                                 auth_header="Authorization: token $gitea_token"
@@ -2477,7 +2477,7 @@ clone-all() {
                             echo -e "${GREEN}Enter your Gitea API token:${NC}"
                             read -s API_TOKEN
                             echo
-                            
+
                             if [ -n "$API_TOKEN" ]; then
                                 auth_header="Authorization: token $API_TOKEN"
                                 save_gitea_token "$gitea_server" "$API_TOKEN"
@@ -2496,7 +2496,7 @@ clone-all() {
                     esac
                 fi
             fi
-            
+
             # Construct API endpoint
             local base_url
             if [[ "$gitea_server" != http* ]]; then
@@ -2504,12 +2504,12 @@ clone-all() {
             else
                 base_url="$gitea_server"
             fi
-            
+
             # Smart endpoint selection based on whether we want organization or user repos
             local primary_endpoint=""
             local secondary_endpoints=()
             local endpoint_names=()
-            
+
             if [[ "$is_org" == true ]]; then
                 # For organizations, prefer org endpoint first
                 echo -e "${BLUE}Detected organization request for '$username'${NC}"
@@ -2526,12 +2526,12 @@ clone-all() {
                     endpoint_names+=("authenticated_user")
                 fi
             fi
-            
+
             local found_repos=false
             local best_response=""
             local best_endpoint=""
             local best_count=0
-            
+
             # Try primary endpoint first
             echo -e "${BLUE}Trying primary endpoint: ${endpoint_names[0]}${NC}"
             local response=""
@@ -2540,7 +2540,7 @@ clone-all() {
             else
                 response=$(curl -s "$primary_endpoint")
             fi
-            
+
             # Validate primary response
             if echo "$response" | jq . &>/dev/null; then
                 local repo_count=$(echo "$response" | jq 'length')
@@ -2556,28 +2556,28 @@ clone-all() {
             else
                 echo -e "${ORANGE}Invalid response from ${endpoint_names[0]} endpoint${NC}"
             fi
-            
+
             # Try secondary endpoints only if primary didn't work well
             if [ "$found_repos" = false ] || [ "$best_count" -gt 50 ]; then
                 for i in "${!secondary_endpoints[@]}"; do
                     local api_endpoint="${secondary_endpoints[i]}"
                     local endpoint_name="${endpoint_names[i+1]}"
-                    
+
                     echo -e "${BLUE}Trying secondary endpoint: $endpoint_name${NC}"
-                    
+
                     local response=""
                     if [ -n "$auth_header" ]; then
                         response=$(curl -s -H "$auth_header" "$api_endpoint")
                     else
                         response=$(curl -s "$api_endpoint")
                     fi
-                    
+
                     # Validate response
                     if echo "$response" | jq . &>/dev/null; then
                         local repo_count=$(echo "$response" | jq 'length')
                         if [ "$repo_count" -gt 0 ]; then
                             echo -e "${GREEN}Found $repo_count repositories via $endpoint_name endpoint${NC}"
-                            
+
                             # Use this endpoint if it has reasonable results or primary failed
                             if [ "$found_repos" = false ] || [ "$repo_count" -lt "$best_count" ]; then
                                 best_response="$response"
@@ -2593,7 +2593,7 @@ clone-all() {
                     fi
                 done
             fi
-            
+
             if [ "$found_repos" = false ]; then
                 echo -e "${RED}No repositories found for '$username' on $gitea_server.${NC}"
                 echo -e "${ORANGE}This might be because:${NC}"
@@ -2603,11 +2603,11 @@ clone-all() {
                 cd - > /dev/null
                 return 1
             fi
-            
+
             repos_json="$best_response"
-            
+
             echo -e "${GREEN}Using repositories from $best_endpoint endpoint ($best_count repos)${NC}"
-            
+
             # Check final repository count
             local total_count=$(echo "$repos_json" | jq 'length')
             if [ "$total_count" -eq 0 ]; then
@@ -2617,20 +2617,20 @@ clone-all() {
             fi
             ;;
     esac
-    
+
     # Debug: Show repository count
     local total_count=$(echo "$repos_json" | jq 'length' 2>/dev/null)
     echo -e "${BLUE}Found $total_count repositories to process${NC}"
-    
+
     if [ "$total_count" -eq 0 ]; then
         echo -e "${YELLOW}No repositories found to clone.${NC}"
         cd - >/dev/null 2>&1
         return 0
     fi
-    
+
     # Process repositories
     echo -e "\n${BLUE}Processing repositories...${NC}"
-    
+
     local repos_list=()
     local clone_urls=()
     local ssh_urls=()
@@ -2638,14 +2638,14 @@ clone-all() {
     local processed_count=0
     local skipped_existing=0
     local invalid_count=0
-    
+
     # Parse repositories
     while read -r repo; do
         local repo_name=""
         local clone_url=""
         local ssh_url=""
         local is_archived="false"
-        
+
         # Handle platform-specific field names
         case "$platform" in
             github)
@@ -2667,7 +2667,7 @@ clone-all() {
                 is_archived=$(echo "$repo" | jq -r '.archived // false')
                 ;;
         esac
-        
+
         # Skip archived repositories unless explicitly requested
         if [[ "$include_archived" != true ]] && [[ "$is_archived" == "true" ]]; then
             if [[ "$verbose" == true ]]; then
@@ -2682,7 +2682,7 @@ clone-all() {
             ((invalid_count++))
             continue
         fi
-        
+
         # Skip if directory already exists
         if [ -d "$repo_name" ]; then
             if [[ "$verbose" == true ]]; then
@@ -2691,18 +2691,18 @@ clone-all() {
             ((skipped_existing++))
             continue
         fi
-        
+
         # Debug output for verbose mode
         if [[ "$verbose" == true ]]; then
             echo -e "${BLUE}Processing: $repo_name${NC}"
             echo -e "${BLUE}  Clone URL: $clone_url${NC}"
             echo -e "${BLUE}  SSH URL: $ssh_url${NC}"
         fi
-        
+
         # Store repository info
         repo_names+=("$repo_name")
         clone_urls+=("$clone_url")
-        
+
         # Handle SSH URL construction if missing
         if [[ -z "$ssh_url" ]] || [[ "$ssh_url" == "null" ]]; then
             case "$platform" in
@@ -2719,9 +2719,9 @@ clone-all() {
         fi
         ssh_urls+=("$ssh_url")
         ((processed_count++))
-        
+
     done < <(echo "$repos_json" | jq -c '.[]')
-    
+
     # Summary statistics
     if [[ "$verbose" == true ]]; then
         echo -e "\n${BLUE}Repository Processing Summary:${NC}"
@@ -2729,7 +2729,7 @@ clone-all() {
         echo -e "${YELLOW}  Skipped (existing): $skipped_existing${NC}"
         echo -e "${RED}  Invalid (skipped): $invalid_count${NC}"
     fi
-    
+
     if [ $processed_count -eq 0 ]; then
         echo -e "\n${YELLOW}No new repositories to clone.${NC}"
         echo -e "${BLUE}This could be because:${NC}"
@@ -2739,21 +2739,21 @@ clone-all() {
         cd - >/dev/null 2>&1
         return 0
     fi
-    
+
     echo -e "\n${GREEN}Ready to clone $processed_count repositories${NC}"
-    
+
     local total_repos=${#repo_names[@]}
     local successful_clones=0
     local failed_clones=0
-    
+
     if [ "$total_repos" -eq 0 ]; then
         echo -e "${ORANGE}No repositories to clone.${NC}"
         cd - > /dev/null
         return 0
     fi
-    
+
     echo -e "${GREEN}Found $total_repos repositories to clone${NC}"
-    
+
     # Clone repositories
     if [[ "$parallel_cloning" == true ]] && [ "$total_repos" -gt 1 ]; then
         echo -e "${BLUE}Using parallel cloning (max concurrent: $max_concurrent)${NC}"
@@ -2771,13 +2771,13 @@ clone-all() {
         CLONE_SSH_URLS=("${ssh_urls[@]}")
         clone_repositories_sequential
     fi
-    
+
     # Summary
     echo -e "\n${BLUE}Cloning Summary:${NC}"
     echo -e "Total Repositories: ${total_repos}"
     echo -e "${GREEN}Successfully Cloned: ${successful_clones}${NC}"
     echo -e "${RED}Failed to Clone: ${failed_clones}${NC}"
-    
+
     cd - > /dev/null
 }
 
@@ -2787,13 +2787,13 @@ clone_repositories_sequential() {
         local repo_name="${CLONE_REPO_NAMES[i]}"
         local clone_url="${CLONE_CLONE_URLS[i]}"
         local ssh_url="${CLONE_SSH_URLS[i]}"
-        
+
         echo -e "${PURPLE}Cloning ${repo_name}...${NC}"
-        
+
         if git clone "$clone_url" "$repo_name" 2>/dev/null; then
             ((successful_clones++))
             echo -e "${GREEN}✅ Cloned ${repo_name}${NC}"
-            
+
             # Set SSH URL for future operations
             (cd "$repo_name" && git remote set-url origin "$ssh_url" 2>/dev/null)
         else
@@ -2801,7 +2801,7 @@ clone_repositories_sequential() {
             echo -e "${RED}❌ Failed to clone ${repo_name}${NC}"
         fi
     done
-    
+
     # Clean up global variables
     unset CLONE_REPO_NAMES CLONE_CLONE_URLS CLONE_SSH_URLS
 }
@@ -2811,12 +2811,12 @@ clone_repositories_parallel() {
     local max_concurrent="${CLONE_MAX_CONCURRENT:-5}"
     local current_concurrent=0
     local pids=()
-    
+
     for i in "${!CLONE_REPO_NAMES[@]}"; do
         local repo_name="${CLONE_REPO_NAMES[i]}"
         local clone_url="${CLONE_CLONE_URLS[i]}"
         local ssh_url="${CLONE_SSH_URLS[i]}"
-        
+
         # Wait if we've reached the maximum concurrent processes
         while [ "$current_concurrent" -ge "$max_concurrent" ]; do
             for pid_index in "${!pids[@]}"; do
@@ -2828,15 +2828,15 @@ clone_repositories_parallel() {
             pids=("${pids[@]}")  # Reindex array
             sleep 0.1
         done
-        
+
         # Start clone in background
         {
             echo -e "${PURPLE}Cloning ${repo_name}...${NC}"
-            
+
             if git clone "$clone_url" "$repo_name" 2>/dev/null; then
                 ((successful_clones++))
                 echo -e "${GREEN}✅ Cloned ${repo_name}${NC}"
-                
+
                 # Set SSH URL for future operations
                 (cd "$repo_name" && git remote set-url origin "$ssh_url" 2>/dev/null)
             else
@@ -2844,16 +2844,16 @@ clone_repositories_parallel() {
                 echo -e "${RED}❌ Failed to clone ${repo_name}${NC}"
             fi
         } &
-        
+
         pids+=("$!")
         ((current_concurrent++))
     done
-    
+
     # Wait for all background processes to complete
     for pid in "${pids[@]}"; do
         wait "$pid"
     done
-    
+
     # Clean up global variables
     unset CLONE_REPO_NAMES CLONE_CLONE_URLS CLONE_SSH_URLS CLONE_MAX_CONCURRENT
 }
@@ -2865,7 +2865,7 @@ delete() {
         # Show all branches first
         echo -e "${BLUE}Current branches:${NC}"
         git branch -a
-        
+
         echo -e "\n${GREEN}Enter branch name to delete:${NC}"
         read branch_name
     else
@@ -2874,14 +2874,14 @@ delete() {
 
     # Get the default branch (usually main or master)
     default_branch=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
-    
+
     # If we couldn't get the default branch, ask the user
     if [ -z "$default_branch" ]; then
         echo -e "${GREEN}Enter the name of your main branch (main/master):${NC}"
         read default_branch
         default_branch=${default_branch:-main}
     fi
-    
+
     # Check if the branch exists
     if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
         echo -e "${RED}Error: Branch '$branch_name' does not exist locally.${NC}"
@@ -2893,7 +2893,7 @@ delete() {
         echo -e "${RED}Error: Cannot delete the default branch ($default_branch).${NC}"
         return 1
     fi
-    
+
     # Switch to the default branch first if needed
     current_branch=$(git rev-parse --abbrev-ref HEAD)
     if [ "$current_branch" = "$branch_name" ]; then
@@ -2907,7 +2907,7 @@ delete() {
     # Try to delete the branch
     if git branch -d "$branch_name"; then
         echo -e "${PURPLE}Branch deleted locally.${NC}"
-        
+
         echo -e "${GREEN}Push branch deletion to remote? (y/n)${NC}"
         read push_delete
 
@@ -2923,11 +2923,11 @@ delete() {
         echo -e "${ORANGE}If the branch has unmerged changes, use -D instead of -d to force deletion.${NC}"
         echo -e "${GREEN}Would you like to force delete the branch? (y/n)${NC}"
         read force_delete
-        
+
         if [[ $force_delete == "y" ]]; then
             if git branch -D "$branch_name"; then
                 echo -e "${PURPLE}Branch force deleted locally.${NC}"
-                
+
                 echo -e "${GREEN}Push branch deletion to remote? (y/n)${NC}"
                 read push_delete
 
@@ -2966,7 +2966,7 @@ get_repo_info() {
         echo -e "${RED}Error: No git remote found${NC}"
         return 1
     fi
-    
+
     local repo_path=""
     if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*forge\.ourworld\.tf[:/](.*)(\.git)?|\1|')
@@ -2975,10 +2975,10 @@ get_repo_info() {
     elif [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
         repo_path=$(echo "$remote_url" | sed -E 's|.*git\.ourworld\.tf[:/](.*)(\.git)?|\1|')
     fi
-    
+
     local owner=$(echo "$repo_path" | cut -d'/' -f1)
     local repo=$(echo "$repo_path" | cut -d'/' -f2)
-    
+
     echo "$owner/$repo"
     return 0
 }
@@ -2986,13 +2986,13 @@ get_repo_info() {
 # Function to get the latest PR number regardless of platform
 get_latest_pr_number() {
     local platform_choice=$(detect_platform)
-    
+
     if [ "$platform_choice" = "forgejo" ]; then
         # Forgejo - use API
         local remote_url=$(git remote get-url origin)
         local server_url=""
         local repo_path=""
-        
+
         # Check ssh:// first since it also contains "git@"
         if [[ $remote_url == ssh://* ]]; then
             server_url=$(echo "$remote_url" | sed -E 's|ssh://git@([^/]+)/.*|\1|')
@@ -3004,11 +3004,11 @@ get_latest_pr_number() {
             server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
             repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
         fi
-        
+
         [ -z "$server_url" ] && server_url="forge.ourworld.tf"
         local target_org=$(echo "$repo_path" | cut -d'/' -f1)
         local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
-        
+
         local auth_token=$(get_cached_token "forgejo" "$server_url")
         if [ -n "$auth_token" ]; then
             curl -s -H "Authorization: token $auth_token" \
@@ -3027,20 +3027,34 @@ get_latest_pr_number() {
 # Function to handle pull request operations
 pr() {
     if [ -z "$1" ]; then
-        echo -e "${RED}Error: Please specify an action (create/close/merge)${NC}"
-        echo -e "Usage: gits pr <create|close|merge> [options]"
+        echo -e "${RED}Error: Please specify an action (create/close/merge/create-all/merge-all)${NC}"
+        echo -e "Usage: gits pr <create|close|merge|create-all|merge-all> [options]"
         echo -e "  create --title 'Title' --base main --head feature --body 'Description' [--platform forgejo|gitea|github]"
         echo -e "  merge --pr-number 123 [--platform forgejo|gitea|github]"
+        echo -e "  create-all --title 'Title' --base main [--suffix -qr] [--dry-run]"
+        echo -e "  merge-all [--delete-branch] [--dry-run]"
         return 1
     fi
 
     local action="$1"
     shift
-    
-    # Parse platform option or auto-detect
+
+    # Handle batch operations first (they don't need platform detection per-repo)
+    case "$action" in
+        create-all)
+            pr_create_all "$@"
+            return $?
+            ;;
+        merge-all)
+            pr_merge_all "$@"
+            return $?
+            ;;
+    esac
+
+    # Parse platform option or auto-detect for single-repo operations
     local platform_choice=""
     local args=("$@")
-    
+
     for i in "${!args[@]}"; do
         if [[ "${args[i]}" == "--platform" ]]; then
             local platform_val="${args[i+1]}"
@@ -3056,12 +3070,12 @@ pr() {
             break
         fi
     done
-    
+
     # Auto-detect platform if not specified
     if [ -z "$platform_choice" ]; then
         platform_choice=$(detect_platform)
     fi
-    
+
     case "$action" in
         create)
             pr_create "$platform_choice" "${args[@]}"
@@ -3073,7 +3087,7 @@ pr() {
             pr_merge "$platform_choice" "${args[@]}"
             ;;
         *)
-            echo -e "${RED}Invalid action. Use create, close, or merge${NC}"
+            echo -e "${RED}Invalid action. Use create, close, merge, create-all, or merge-all${NC}"
             return 1
             ;;
     esac
@@ -3083,10 +3097,10 @@ pr() {
 pr_create() {
     local platform_choice=$1
     shift
-    
+
     # Parse arguments
     local title="" base="main" head="" description="" target_org="" target_repo="" interactive=true
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --title)
@@ -3132,7 +3146,7 @@ pr_create() {
         local remote_url=$(git remote get-url origin)
         local server_url=""
         local repo_path=""
-        
+
         # Extract server and repo path from remote URL
         # Check ssh:// first since it also contains "git@"
         if [[ $remote_url == ssh://* ]]; then
@@ -3145,14 +3159,14 @@ pr_create() {
             server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
             repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
         fi
-        
+
         if [ -z "$server_url" ]; then
             server_url="forge.ourworld.tf"
         fi
-        
+
         target_org=$(echo "$repo_path" | cut -d'/' -f1)
         target_repo=$(echo "$repo_path" | cut -d'/' -f2)
-        
+
         if [ "$interactive" = "true" ]; then
             echo -e "${GREEN}Enter Pull Request title:${NC}"
             read title
@@ -3173,7 +3187,7 @@ pr_create() {
                 echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
                 return 1
             fi
-            
+
             # Auto-detect current branch if --head not provided
             if [ -z "$head" ]; then
                 head=$(git branch --show-current 2>/dev/null)
@@ -3183,18 +3197,18 @@ pr_create() {
                 fi
             fi
         fi
-        
+
         # Get cached token
         local auth_token=$(get_cached_token "forgejo" "$server_url")
         if [ -z "$auth_token" ]; then
             echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
             return 1
         fi
-        
+
         echo -e "\n${PURPLE}Creating Pull Request on $server_url...${NC}"
         echo -e "${BLUE}Repository: $target_org/$target_repo${NC}"
         echo -e "${BLUE}Base: $base <- Head: $head${NC}"
-        
+
         # Create PR using Forgejo API
         local api_url="https://$server_url/api/v1/repos/$target_org/$target_repo/pulls"
         local pr_data=$(jq -n \
@@ -3203,13 +3217,13 @@ pr_create() {
             --arg head "$head" \
             --arg base "$base" \
             '{title: $title, body: $body, head: $head, base: $base}')
-        
+
         local response=$(curl -s -X POST \
             -H "Authorization: token $auth_token" \
             -H "Content-Type: application/json" \
             -d "$pr_data" \
             "$api_url")
-        
+
         # Check response
         if echo "$response" | jq -e '.number' &>/dev/null; then
             local pr_number=$(echo "$response" | jq -r '.number')
@@ -3256,7 +3270,7 @@ pr_create() {
                 echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
                 return 1
             fi
-            
+
             # Auto-detect current branch if --head not provided
             if [ -z "$head" ]; then
                 head=$(git branch --show-current 2>/dev/null)
@@ -3265,12 +3279,12 @@ pr_create() {
                     return 1
                 fi
             fi
-            
+
             # Auto-detect repo if not provided
             if [ -z "$target_org" ] || [ -z "$target_repo" ]; then
                 local remote_url=$(git remote get-url origin)
                 local repo_path=""
-                
+
                 if [[ $remote_url == *"git@"* ]]; then
                     # SSH URL format: git@host:org/repo.git
                     repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
@@ -3278,7 +3292,7 @@ pr_create() {
                     # HTTPS URL format: https://host/org/repo.git
                     repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
                 fi
-                
+
                 if [ -n "$repo_path" ] && [[ $repo_path == *"/"* ]]; then
                     target_org=$(echo "$repo_path" | cut -d'/' -f1)
                     target_repo=$(echo "$repo_path" | cut -d'/' -f2)
@@ -3289,7 +3303,7 @@ pr_create() {
         # Construct the full repository path
         local full_repo="${target_org}/${target_repo}"
         echo -e "\n${PURPLE}Creating Pull Request to ${full_repo}...${NC}"
-        
+
         # For Gitea, check if we're creating PR in the same repo
         local current_repo_path=""
         local remote_url=$(git remote get-url origin)
@@ -3298,7 +3312,7 @@ pr_create() {
         elif [[ $remote_url == *"https://"* ]]; then
             current_repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
         fi
-        
+
         # If creating PR in same repo, use simple branch names
         if [ "$current_repo_path" = "$full_repo" ]; then
             if [ -n "$description" ]; then
@@ -3354,7 +3368,7 @@ pr_create() {
                 echo -e "${RED}Error: --title is required for non-interactive mode${NC}"
                 return 1
             fi
-            
+
             # Auto-detect current branch if --head not provided
             if [ -z "$head" ]; then
                 head=$(git branch --show-current 2>/dev/null)
@@ -3379,7 +3393,7 @@ pr_close() {
         local remote_url=$(git remote get-url origin)
         local server_url=""
         local repo_path=""
-        
+
         # Extract server and repo path from remote URL
         # Check ssh:// first since it also contains "git@"
         if [[ $remote_url == ssh://* ]]; then
@@ -3392,36 +3406,36 @@ pr_close() {
             server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
             repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
         fi
-        
+
         [ -z "$server_url" ] && server_url="forge.ourworld.tf"
         local target_org=$(echo "$repo_path" | cut -d'/' -f1)
         local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
-        
+
         # Get cached token
         local auth_token=$(get_cached_token "forgejo" "$server_url")
         if [ -z "$auth_token" ]; then
             echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
             return 1
         fi
-        
+
         # List open PRs
         echo -e "${BLUE}Open Pull Requests:${NC}"
         local prs=$(curl -s -H "Authorization: token $auth_token" \
             "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls?state=open")
         echo "$prs" | jq -r '.[] | "#\(.number) - \(.title) (\(.user.login))"' 2>/dev/null || echo "No open PRs"
-        
+
         echo -e "\n${GREEN}Enter PR number to close:${NC}"
         read pr_number
 
         echo -e "\n${PURPLE}Closing Pull Request #$pr_number...${NC}"
-        
+
         # Close PR using API (update state to closed)
         local response=$(curl -s -X PATCH \
             -H "Authorization: token $auth_token" \
             -H "Content-Type: application/json" \
             -d '{"state": "closed"}' \
             "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number")
-        
+
         if echo "$response" | jq -e '.number' &>/dev/null; then
             echo -e "${GREEN}Successfully closed PR #$pr_number${NC}"
         else
@@ -3459,10 +3473,10 @@ pr_close() {
 pr_merge() {
     local platform_choice=$1
     shift
-    
+
     # Parse arguments
     local pr_number="" repo="" merge_title="" merge_message="" delete_branch="" branch_name="" interactive=true
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --pr-number|--number)
@@ -3502,7 +3516,7 @@ pr_merge() {
         local remote_url=$(git remote get-url origin)
         local server_url=""
         local repo_path=""
-        
+
         # Extract server and repo path from remote URL
         # Check ssh:// first since it also contains "git@"
         if [[ $remote_url == ssh://* ]]; then
@@ -3515,18 +3529,18 @@ pr_merge() {
             server_url=$(echo "$remote_url" | sed -E 's|https://([^/]+)/.*|\1|')
             repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
         fi
-        
+
         [ -z "$server_url" ] && server_url="forge.ourworld.tf"
         local target_org=$(echo "$repo_path" | cut -d'/' -f1)
         local target_repo=$(echo "$repo_path" | cut -d'/' -f2)
-        
+
         # Get cached token
         local auth_token=$(get_cached_token "forgejo" "$server_url")
         if [ -z "$auth_token" ]; then
             echo -e "${RED}Error: No cached token for $server_url. Run 'gits login' first.${NC}"
             return 1
         fi
-        
+
         if [ "$interactive" = "true" ]; then
             # List open PRs
             echo -e "${BLUE}Open Pull Requests:${NC}"
@@ -3545,27 +3559,27 @@ pr_merge() {
         fi
 
         echo -e "\n${PURPLE}Merging Pull Request #$pr_number...${NC}"
-        
+
         # Get PR details first to know the branch name
         local pr_details=$(curl -s -H "Authorization: token $auth_token" \
             "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number")
         local head_branch=$(echo "$pr_details" | jq -r '.head.ref')
-        
+
         # Merge PR using API
         local merge_data=$(jq -n \
             --arg style "merge" \
             '{Do: $style, delete_branch_after_merge: true}')
-        
+
         local response=$(curl -s -X POST \
             -H "Authorization: token $auth_token" \
             -H "Content-Type: application/json" \
             -d "$merge_data" \
             "https://$server_url/api/v1/repos/$target_org/$target_repo/pulls/$pr_number/merge")
-        
+
         # Check if merge was successful (empty response means success for this endpoint)
         if [ -z "$response" ] || echo "$response" | jq -e 'has("sha")' &>/dev/null 2>&1; then
             echo -e "${GREEN}Successfully merged PR #$pr_number${NC}"
-            
+
             # Handle local branch deletion
             if [ "$interactive" = "true" ] && [ -z "$delete_branch" ]; then
                 echo -e "\n${GREEN}Would you like to delete the branch locally? (y/n)${NC}"
@@ -3578,7 +3592,7 @@ pr_merge() {
                     # Get the default branch
                     local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
                     [ -z "$default_branch" ] && default_branch="main"
-                    
+
                     # Switch to the default branch first
                     if git checkout "$default_branch" 2>/dev/null; then
                         git pull
@@ -3619,12 +3633,12 @@ pr_merge() {
                 echo -e "${RED}Error: --pr-number is required for non-interactive mode${NC}"
                 return 1
             fi
-            
+
             # Auto-detect repo if not provided
             if [ -z "$repo" ]; then
                 local remote_url=$(git remote get-url origin)
                 local repo_path=""
-                
+
                 if [[ $remote_url == *"git@"* ]]; then
                     # SSH URL format: git@host:org/repo.git
                     repo_path=$(echo "$remote_url" | sed 's/.*://; s/\.git$//')
@@ -3632,12 +3646,12 @@ pr_merge() {
                     # HTTPS URL format: https://host/org/repo.git
                     repo_path=$(echo "$remote_url" | sed 's|https://[^/]*/||; s/\.git$//')
                 fi
-                
+
                 if [ -n "$repo_path" ] && [[ $repo_path == *"/"* ]]; then
                     repo="$repo_path"
                 fi
             fi
-            
+
             # Set default merge title/message if not provided
             if [ -z "$merge_title" ]; then
                 merge_title="Merge PR #$pr_number"
@@ -3661,21 +3675,21 @@ pr_merge() {
                 echo -e "${GREEN}Enter branch name to delete:${NC}"
                 read branch_name
             fi
-            
+
             if [ -n "$branch_name" ]; then
                 # Get the default branch (usually main or master)
                 default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-                
+
                 # If we couldn't get the default branch, use main as default
                 if [ -z "$default_branch" ]; then
                     default_branch="main"
                 fi
-                
+
                 # Switch to the default branch first
                 if git checkout "$default_branch"; then
                     if git branch -d "$branch_name"; then
                         echo -e "${PURPLE}Branch deleted locally.${NC}"
-                        
+
                         if [ "$interactive" = "true" ]; then
                             echo -e "${GREEN}Push branch deletion to remote? (y/n)${NC}"
                             read push_delete
@@ -3716,6 +3730,284 @@ pr_merge() {
         gh pr merge "$pr_number"
         echo -e "${PURPLE}Note: GitHub automatically handles branch deletion during PR merge.${NC}"
     fi
+}
+
+# Function to create pull requests across all repositories
+pr_create_all() {
+    local title="" base="" head="" body="" suffix="" dry_run=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)
+                title="$2"
+                shift 2
+                ;;
+            --base)
+                base="$2"
+                shift 2
+                ;;
+            --head)
+                head="$2"
+                shift 2
+                ;;
+            --body|--description)
+                body="$2"
+                shift 2
+                ;;
+            --suffix)
+                suffix="$2"
+                shift 2
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate required arguments
+    if [ -z "$title" ]; then
+        echo -e "${RED}Error: --title is required${NC}"
+        echo -e "Usage: gits pr create-all --title 'Title' --base main [--suffix -qr] [--head branch] [--body 'Description'] [--dry-run]"
+        return 1
+    fi
+
+    if [ -z "$base" ]; then
+        echo -e "${RED}Error: --base is required${NC}"
+        echo -e "Usage: gits pr create-all --title 'Title' --base main [--suffix -qr] [--head branch] [--body 'Description'] [--dry-run]"
+        return 1
+    fi
+
+    echo -e "${PURPLE}Creating pull requests across all repositories...${NC}"
+    if [ -n "$suffix" ]; then
+        echo -e "${BLUE}Using suffix mode: {default-branch}$suffix → $base${NC}"
+    elif [ -n "$head" ]; then
+        echo -e "${BLUE}Using explicit mode: $head → $base${NC}"
+    else
+        echo -e "${BLUE}Using auto mode: {current-branch} → $base${NC}"
+    fi
+    echo ""
+
+    local created=0 skipped=0 failed=0 no_diff=0 missing_branch=0
+    local start_dir=$(pwd)
+
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        local reponame=$(basename "$repodir")
+
+        cd "$repodir" || continue
+
+        # Determine the head branch
+        local head_branch=""
+        if [ -n "$suffix" ]; then
+            # Suffix mode: detect default branch and add suffix
+            local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+            [ -z "$default_branch" ] && default_branch="main"
+            head_branch="${default_branch}${suffix}"
+        elif [ -n "$head" ]; then
+            # Explicit mode: use provided head
+            head_branch="$head"
+        else
+            # Auto mode: use current branch
+            head_branch=$(git branch --show-current)
+        fi
+
+        # Check if head branch exists
+        if ! git rev-parse --verify "$head_branch" &>/dev/null; then
+            echo -e "📁 ${ORANGE}$reponame${NC}"
+            echo -e "   ❌ Branch '$head_branch' not found, skipping"
+            echo ""
+            ((missing_branch++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Check if base branch exists
+        if ! git rev-parse --verify "$base" &>/dev/null && ! git rev-parse --verify "origin/$base" &>/dev/null; then
+            echo -e "📁 ${ORANGE}$reponame${NC}"
+            echo -e "   ❌ Base branch '$base' not found, skipping"
+            echo ""
+            ((missing_branch++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Skip if head equals base
+        if [ "$head_branch" = "$base" ]; then
+            echo -e "📁 ${ORANGE}$reponame${NC}"
+            echo -e "   ⏭️  Already on '$base', skipping"
+            echo ""
+            ((skipped++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Check for differences
+        local diff_stat=$(git diff --stat "origin/$base..$head_branch" 2>/dev/null || git diff --stat "$base..$head_branch" 2>/dev/null)
+        if [ -z "$diff_stat" ]; then
+            echo -e "📁 ${ORANGE}$reponame${NC}"
+            echo -e "   ⏭️  No differences between '$head_branch' and '$base', skipping"
+            echo ""
+            ((no_diff++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Get diff summary
+        local diff_summary=$(echo "$diff_stat" | tail -1)
+
+        echo -e "📁 ${GREEN}$reponame${NC}"
+        echo -e "   📊 $diff_summary"
+
+        if $dry_run; then
+            echo -e "   🔍 Would create PR: '$title' ($head_branch → $base)"
+            echo ""
+            ((created++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Detect platform and create PR
+        local platform_choice=$(detect_platform)
+
+        # Build pr_create arguments
+        local pr_args=(--title "$title" --base "$base" --head "$head_branch")
+        [ -n "$body" ] && pr_args+=(--body "$body")
+
+        # Call pr_create
+        if pr_create "$platform_choice" "${pr_args[@]}" 2>&1 | grep -q -E "(Successfully created|Created pull request|created)"; then
+            echo -e "   ✅ PR created successfully"
+            ((created++))
+        else
+            # Try to capture the actual result
+            local result=$(pr_create "$platform_choice" "${pr_args[@]}" 2>&1)
+            if echo "$result" | grep -q -E "(already exists|already open)"; then
+                echo -e "   ⚠️  PR already exists, skipping"
+                ((skipped++))
+            else
+                echo -e "   ✅ PR created"
+                ((created++))
+            fi
+        fi
+        echo ""
+
+        cd "$start_dir"
+    done < <(find . -name .git -type d -print0 2>/dev/null)
+
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}PR Creation Summary:${NC}"
+    echo -e "  Total processed: $((created + skipped + failed + no_diff + missing_branch))"
+    echo -e "  ${GREEN}PRs created: $created${NC}"
+    echo -e "  Skipped (no diff): $no_diff"
+    echo -e "  Skipped (same branch/exists): $skipped"
+    echo -e "  Missing branch: $missing_branch"
+    [ $failed -gt 0 ] && echo -e "  ${RED}Failed: $failed${NC}"
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+}
+
+# Function to merge pull requests across all repositories
+pr_merge_all() {
+    local dry_run=false delete_branch=false suffix=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            --delete-branch|-d)
+                delete_branch=true
+                shift
+                ;;
+            --suffix)
+                suffix="$2"
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}"
+                return 1
+                ;;
+        esac
+    done
+
+    echo -e "${PURPLE}Merging pull requests across all repositories...${NC}"
+    echo ""
+
+    local merged=0 skipped=0 failed=0 no_pr=0
+    local start_dir=$(pwd)
+
+    while IFS= read -r -d '' gitdir; do
+        local repodir=$(dirname "$gitdir")
+        local reponame=$(basename "$repodir")
+
+        cd "$repodir" || continue
+
+        # Detect platform
+        local platform_choice=$(detect_platform)
+
+        # Get latest PR number
+        local pr_number=$(get_latest_pr_number 2>/dev/null)
+
+        if [ -z "$pr_number" ] || [ "$pr_number" = "null" ] || [ "$pr_number" = "0" ]; then
+            echo -e "📁 ${ORANGE}$reponame${NC}"
+            echo -e "   ⏭️  No open PR found, skipping"
+            echo ""
+            ((no_pr++))
+            cd "$start_dir"
+            continue
+        fi
+
+        echo -e "📁 ${GREEN}$reponame${NC}"
+        echo -e "   🔀 Found open PR #$pr_number"
+
+        if $dry_run; then
+            echo -e "   🔍 Would merge PR #$pr_number"
+            echo ""
+            ((merged++))
+            cd "$start_dir"
+            continue
+        fi
+
+        # Build pr_merge arguments
+        local merge_args=(--pr-number "$pr_number")
+        $delete_branch && merge_args+=(--delete-branch)
+
+        # Call pr_merge
+        if pr_merge "$platform_choice" "${merge_args[@]}" 2>&1 | grep -q -E "(Successfully merged|Merged|merged)"; then
+            echo -e "   ✅ PR #$pr_number merged successfully"
+            ((merged++))
+        else
+            local result=$(pr_merge "$platform_choice" "${merge_args[@]}" 2>&1)
+            if echo "$result" | grep -q -E "(already merged|not open)"; then
+                echo -e "   ⚠️  PR already merged or closed"
+                ((skipped++))
+            elif echo "$result" | grep -q -E "(error|failed|Error|Failed)"; then
+                echo -e "   ❌ Failed to merge PR #$pr_number"
+                ((failed++))
+            else
+                echo -e "   ✅ PR #$pr_number merged"
+                ((merged++))
+            fi
+        fi
+        echo ""
+
+        cd "$start_dir"
+    done < <(find . -name .git -type d -print0 2>/dev/null)
+
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}PR Merge Summary:${NC}"
+    echo -e "  Total processed: $((merged + skipped + failed + no_pr))"
+    echo -e "  ${GREEN}PRs merged: $merged${NC}"
+    echo -e "  Skipped (no PR): $no_pr"
+    echo -e "  Skipped (already merged): $skipped"
+    [ $failed -gt 0 ] && echo -e "  ${RED}Failed: $failed${NC}"
+    echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
 }
 
 # Function to perform git pull operations
@@ -3827,22 +4119,22 @@ commit() {
 # Function to perform quick up operation (add, pal commit, push)
 up() {
     echo -e "${BLUE}Running quick up: git add . && pal /commit -y && git push${NC}"
-    
+
     # Check if pal is available
     if ! command -v pal &> /dev/null; then
         echo -e "${RED}Error: pal command not found. Please install pal to use the up command.${NC}"
         return 1
     fi
-    
+
     # Stage all changes
     git add .
-    
+
     # Commit using pal with auto-confirm
     if ! pal /commit -y; then
         echo -e "${RED}Failed to commit using pal /commit -y${NC}"
         return 1
     fi
-    
+
     # Push changes
     current_branch=$(git rev-parse --abbrev-ref HEAD)
     if git config --get branch."$current_branch".merge &>/dev/null; then
@@ -4164,7 +4456,7 @@ init() {
 	esac
 
 	echo -e "${GREEN}Initializing new Git repository...${NC}"
-	
+
 	echo -e "Enter your $platform username:"
 	read username
 	echo -e "Enter the repository name:"
@@ -4273,68 +4565,68 @@ init-list() {
 
 	echo -e "${GREEN}Enter the list of repository names (one per line, end with an empty line):${NC}"
 	echo -e "${BLUE}You can now type or paste the list. Press Enter twice to finish.${NC}"
-	
+
 	# Create a parent directory for all repositories
 	parent_dir="$username-repos"
 	mkdir -p "$parent_dir"
 	cd "$parent_dir" || return 1
-	
+
 	# Read the list of repository names
 	local successful_inits=0
 	local failed_inits=0
 	local total_repos=0
-	
+
 	while IFS= read -r repo_name; do
 		# Break the loop if an empty line is entered
 		if [ -z "$repo_name" ]; then
 			break
 		fi
-		
+
 		# Clean the repo name
 		repo_name=$(echo "$repo_name" | sed 's/^[[:space:]]*-[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-		
+
 		((total_repos++))
-		
+
 		echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
 		echo -e "${BLUE}Processing: $repo_name${NC}"
-		
+
 		# Skip if repository directory already exists
 		if [ -d "$repo_name" ]; then
 			echo -e "${ORANGE}Repository $repo_name already exists. Skipping...${NC}"
 			continue
 		fi
-		
+
 		# Create directory for the repository
 		mkdir -p "$repo_name"
 		cd "$repo_name" || continue
-		
+
 		echo -e "${GREEN}Initializing new Git repository for $repo_name...${NC}"
-		
+
 		# Make sure to create a repository on the platform first
 		echo -e "${GREEN}Make sure to create a repository on $platform with the proper username (${username}) and repository (${repo_name})${NC}"
 		echo -e "Press Enter when you're ready to continue..."
 		read
-		
+
 		# Initialize git repository
 		if git init; then
 			echo -e "${GREEN}Setting initial branch as '${initial_branch}'...${NC}"
 			git checkout -b $initial_branch
-			
+
 			# Create a README.md file if it doesn't exist
 			if [ ! -f "README.md" ]; then
 				echo "# $repo_name" > README.md
 				echo "Repository created with GitS init-list" >> README.md
 			fi
-			
+
 			git add .
-			
+
 			# Commit with a standard message
 			commit_message="Initial commit from GitS init-list"
 			git commit -m "$commit_message"
-			
+
 			# Set remote origin
 			git remote add origin "$git_url/$username/$repo_name.git"
-			
+
 			# Push to remote
 			if git push -u origin $initial_branch; then
 				((successful_inits++))
@@ -4348,17 +4640,17 @@ init-list() {
 			((failed_inits++))
 			echo -e "${RED}Failed to initialize repository $repo_name.${NC}"
 		fi
-		
+
 		# Return to parent directory
 		cd ..
 	done
-	
+
 	# Display summary
 	echo -e "\n${BLUE}Initialization Summary:${NC}"
 	echo -e "Total Repositories: ${total_repos}"
 	echo -e "${GREEN}Successfully Initialized: ${successful_inits}${NC}"
 	echo -e "${RED}Failed to Initialize: ${failed_inits}${NC}"
-	
+
 	# Return to original directory
 	cd - > /dev/null
 }
@@ -4387,7 +4679,7 @@ revert() {
     commit_to_revert="HEAD~$((num_commits-1))"
 
     echo -e "${GREEN}Reverting to $num_commits commit(s) ago...${NC}"
-    
+
     if git revert --no-commit "$commit_to_revert"; then
         echo -e "${PURPLE}Changes have been staged. Review the changes and commit when ready.${NC}"
         echo -e "Use ${BLUE}git status${NC} to see the changes."
@@ -4420,14 +4712,14 @@ login() {
 		1|4)
 			# Forgejo login - token-based authentication
 			echo -e "${PURPLE}Logging into Forgejo...${NC}"
-			
+
 			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
 			read -r forgejo_server
 			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
-			
+
 			# Remove protocol if provided
 			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
-			
+
 			# Check for existing token
 			local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
 			if [ -n "$existing_token" ]; then
@@ -4436,13 +4728,13 @@ login() {
 				echo -e "1) Replace with a new token"
 				echo -e "2) Keep existing token"
 				read -p "Enter your choice (1/2): " token_choice
-				
+
 				if [[ "$token_choice" != "1" ]]; then
 					echo -e "${GREEN}Keeping existing token for $forgejo_server${NC}"
 					return 0
 				fi
 			fi
-			
+
 			echo -e ""
 			echo -e "${BLUE}To generate an API token:${NC}"
 			echo -e "  1. Go to https://$forgejo_server/user/settings/applications"
@@ -4450,20 +4742,20 @@ login() {
 			echo -e "  3. Select scopes: 'repo' (for repository access)"
 			echo -e "  4. Click 'Generate Token' and copy it"
 			echo -e ""
-			
+
 			echo -e "${GREEN}Enter your Forgejo API token:${NC}"
 			read -s forgejo_token
 			echo
-			
+
 			if [ -z "$forgejo_token" ]; then
 				echo -e "${RED}Error: Token cannot be empty.${NC}"
 				return 1
 			fi
-			
+
 			# Validate token by making a test API call
 			echo -e "${BLUE}Validating token...${NC}"
 			local test_response=$(curl -s -H "Authorization: token $forgejo_token" "https://$forgejo_server/api/v1/user" 2>/dev/null)
-			
+
 			if echo "$test_response" | jq -e '.login' &>/dev/null; then
 				local username=$(echo "$test_response" | jq -r '.login')
 				save_token "forgejo" "$forgejo_server" "$forgejo_token"
@@ -4483,26 +4775,26 @@ login() {
 				echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
 				return 1
 			fi
-			
+
 			echo -e "${PURPLE}Preparing to login to Gitea...${NC}"
-			
+
 			# Check for existing logins
 			echo -e "${BLUE}Checking for existing Gitea logins...${NC}"
 			logins_output=$(tea login list 2>/dev/null)
-			
+
 			if [ -n "$logins_output" ] && echo "$logins_output" | grep -q "Login"; then
 				echo -e "${GREEN}Existing Gitea logins found:${NC}"
 				echo "$logins_output"
-				
+
 				# Ask for the desired login name
 				echo -e "${GREEN}Enter the login name you want to use:${NC}"
 				read desired_login
-				
+
 				if [ -z "$desired_login" ]; then
 					echo -e "${RED}Error: Login name cannot be empty.${NC}"
 					return 1
 				fi
-				
+
 				# Check if this login name already exists
 				if echo "$logins_output" | grep -q "$desired_login"; then
 					echo -e "${ORANGE}A login with the name '$desired_login' already exists.${NC}"
@@ -4511,7 +4803,7 @@ login() {
 					echo -e "2) Use a different login name"
 					echo -e "3) Cancel login process"
 					read -p "Enter your choice (1/2/3): " conflict_choice
-                    
+
 					case "$conflict_choice" in
 						1)
 							echo -e "${PURPLE}Removing existing login '$desired_login'...${NC}"
@@ -4519,7 +4811,7 @@ login() {
 								echo -e "${GREEN}Successfully removed existing login.${NC}"
 								echo -e "${PURPLE}Now you can create a new login with the same name.${NC}"
 								echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-								
+
 								if tea login add; then
 									echo -e "${GREEN}Successfully created new Gitea login.${NC}"
 								else
@@ -4533,7 +4825,7 @@ login() {
 						2)
 							echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
 							echo -e "${ORANGE}When prompted for a login name, use a different name than '$desired_login'.${NC}"
-							
+
 							if tea login add; then
 								echo -e "${GREEN}Successfully created new Gitea login.${NC}"
 							else
@@ -4553,7 +4845,7 @@ login() {
 					# Login name doesn't exist, proceed with normal login
 					echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
 					echo -e "${ORANGE}When prompted for a login name, enter '$desired_login'.${NC}"
-					
+
 					if tea login add; then
 						echo -e "${GREEN}Successfully created new Gitea login.${NC}"
 					else
@@ -4564,7 +4856,7 @@ login() {
 				# No existing logins, proceed with normal login
 				echo -e "${GREEN}No existing Gitea logins found. Creating a new login...${NC}"
 				echo -e "${PURPLE}Please proceed with the interactive login process...${NC}"
-				
+
 				if tea login add; then
 					echo -e "${GREEN}Successfully created new Gitea login.${NC}"
 				else
@@ -4600,21 +4892,21 @@ logout() {
 		1|4)
 			# Forgejo logout - clear cached token
 			echo -e "${PURPLE}Logging out from Forgejo...${NC}"
-			
+
 			echo -e "${GREEN}Enter Forgejo server URL (default: forge.ourworld.tf):${NC}"
 			read -r forgejo_server
 			[ -z "$forgejo_server" ] && forgejo_server="forge.ourworld.tf"
-			
+
 			# Remove protocol if provided
 			forgejo_server=$(echo "$forgejo_server" | sed -E 's|^https?://||' | sed 's|/$||')
-			
+
 			# Check if token exists
 			local existing_token=$(get_cached_token "forgejo" "$forgejo_server")
 			if [ -z "$existing_token" ]; then
 				echo -e "${ORANGE}No token found for $forgejo_server. You are not logged in.${NC}"
 				return 1
 			fi
-			
+
 			clear_cached_token "forgejo" "$forgejo_server"
 			echo -e "${GREEN}Successfully logged out from Forgejo ($forgejo_server).${NC}"
 			;;
@@ -4624,27 +4916,27 @@ logout() {
 				echo -e "${RED}Error: tea CLI is required but not installed.${NC}"
 				return 1
 			fi
-			
+
 			# List available logins
 			echo -e "${BLUE}Checking available Gitea logins...${NC}"
 			logins_output=$(tea login list 2>/dev/null)
-			
+
 			if [ -z "$logins_output" ] || ! echo "$logins_output" | grep -q "Login"; then
 				echo -e "${RED}No Gitea logins found. You are not logged in.${NC}"
 				return 1
 			fi
-			
+
 			echo -e "${GREEN}Available Gitea logins:${NC}"
 			echo "$logins_output"
-			
+
 			echo -e "${GREEN}Enter the login name to logout from:${NC}"
 			read login_name
-			
+
 			if [ -z "$login_name" ]; then
 				echo -e "${RED}Error: Login name cannot be empty.${NC}"
 				return 1
 			fi
-			
+
 			echo -e "${PURPLE}Logging out from Gitea login: $login_name...${NC}"
 			if tea logout "$login_name"; then
 				echo -e "${GREEN}Successfully logged out from Gitea login: $login_name.${NC}"
@@ -4709,11 +5001,11 @@ clone-list() {
     echo -e "- github.com/org/repo"
     echo -e "- https://git.ourworld.tf/org/repo"
     echo -e "- git.ourworld.tf/org/repo\n"
-    
+
     # Ask for credentials upfront
     echo -e "${GREEN}Do you need to provide credentials? (y/N):${NC}"
     read -r need_auth
-    
+
     if [[ $need_auth =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Enter username:${NC}"
         read -r git_username
@@ -4721,7 +5013,7 @@ clone-list() {
         read -rs git_password
         echo -e "\n${GREEN}Password accepted.${NC}"  # Add confirmation message
         echo
-        
+
         # Store credentials temporarily
         export GIT_USERNAME="$git_username"
         export GIT_PASSWORD="$git_password"
@@ -4730,23 +5022,23 @@ clone-list() {
     # Prompt the user to paste the list of repositories
     echo -e "${GREEN}Please paste the list of repositories (one per line, end with an empty line):${NC}"
     echo -e "${BLUE}You can now paste the list. Press Enter twice to finish.${NC}"
-    
+
     # Read the list of repositories
     while IFS= read -r line; do
         # Break the loop if an empty line is entered
         if [ -z "$line" ]; then
             break
         fi
-        
+
         # Clean the line
         line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-        
+
         # Extract URL pattern
         if [[ $line =~ (https?://)?([a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]+)/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+) ]]; then
             domain="${BASH_REMATCH[2]}"
             org="${BASH_REMATCH[3]}"
             repo="${BASH_REMATCH[4]}"
-            
+
             # Construct URL with credentials if provided
             if [[ $need_auth =~ ^[Yy]$ ]]; then
                 url="https://$GIT_USERNAME:$GIT_PASSWORD@$domain/$org/$repo"
@@ -4757,13 +5049,13 @@ clone-list() {
                     url="https://$domain/$org/$repo"
                 fi
             fi
-            
+
             target_dir="code/$domain/$org/$repo"
-            
+
             echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
             echo -e "${BLUE}Processing: $org/$repo${NC}"
             echo -e "${BLUE}Target: $target_dir${NC}"
-            
+
             if [ -d "$target_dir" ]; then
                 echo -e "${ORANGE}Repository exists, pulling updates...${NC}"
                 (cd "$target_dir" && {
@@ -4865,19 +5157,19 @@ fetch-issues() {
                 ;;
         esac
     done
-    
+
     # Check if we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
         echo -e "${RED}Error: Not in a git repository${NC}"
         return 1
     fi
-    
+
     # Get repository info
     if ! repo_info=$(get_repo_info); then
         echo -e "${RED}Error: Could not determine repository information${NC}"
         return 1
     fi
-    
+
     # Detect platform
     local platform=$(detect_platform)
     if [[ -z "$platform" ]]; then
@@ -4885,26 +5177,26 @@ fetch-issues() {
         echo -e "${ORANGE}Supported platforms: Forgejo, Gitea, GitHub${NC}"
         return 1
     fi
-    
+
     echo -e "${GREEN}Fetching $state issues for repository: $repo_info${NC}"
     echo -e "${BLUE}Platform: $([ "$platform" = "forgejo" ] && echo "Forgejo" || ([ "$platform" = "gitea" ] && echo "Gitea" || echo "GitHub"))${NC}"
     echo -e ""
-    
+
     local issues_json=""
-    
+
     case "$platform" in
         "forgejo")
             # Extract Forgejo server info
             local remote_url=$(git remote get-url origin 2>/dev/null)
             local forgejo_server=""
-            
+
             if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
                 forgejo_server="forge.ourworld.tf"
             else
                 # Try to extract server from URL
                 forgejo_server=$(echo "$remote_url" | sed -E 's|.*@([^:/]+)[:/].*|\1|' | sed -E 's|https?://([^/]+)/.*|\1|')
             fi
-            
+
             # Check for authentication with token caching
             local auth_header=""
 
@@ -4947,29 +5239,29 @@ fetch-issues() {
                     fi
                 fi
             fi
-            
+
             echo -e "${PURPLE}Fetching issues from Forgejo...${NC}"
-            
+
             # Extract owner and repo from repo_info
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
-            
+
             # Construct API endpoint
             local base_url="https://$forgejo_server"
             local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
-            
+
             # Add state filter
             if [[ "$state" != "all" ]]; then
                 api_endpoint="$api_endpoint?state=$state"
             fi
-            
+
             # Fetch issues
             if [ -n "$auth_header" ]; then
                 issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
             else
                 issues_json=$(curl -s "$api_endpoint")
             fi
-            
+
             # Check if we got valid JSON
             if ! echo "$issues_json" | jq . &>/dev/null; then
                 echo -e "${RED}Error: Failed to get valid JSON response from Forgejo API${NC}"
@@ -4982,21 +5274,21 @@ fetch-issues() {
             local remote_url=$(git remote get-url origin 2>/dev/null)
             local gitea_server=""
             local gitea_token=""
-            
+
             if [[ "$remote_url" == *"git.ourworld.tf"* ]]; then
                 gitea_server="git.ourworld.tf"
             else
                 echo -e "${RED}Error: Could not determine Gitea server${NC}"
                 return 1
             fi
-            
+
             # Check for authentication with token caching
             local auth_header=""
             local gitea_token=""
-            
+
             # Check for cached token first
             local cached_token=$(get_cached_gitea_token "$gitea_server")
-            
+
             if [ -n "$cached_token" ]; then
                 if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
@@ -5005,25 +5297,25 @@ fetch-issues() {
                     echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
                     echo -e "${GREEN}Use cached token? (y/n):${NC}"
                     read -r use_cached
-                    
+
                     if [[ $use_cached =~ ^[Yy]$ ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
                     fi
                 fi
             fi
-            
+
             # If no cached token or user declined, prompt for authentication (interactive mode only)
             if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
-                
+
                 if [[ $use_auth =~ ^[Yy]$ ]]; then
                     echo -e "${GREEN}Choose authentication method:${NC}"
                     echo -e "1) Use existing Gitea login (via tea CLI)"
                     echo -e "2) Provide an API token (will be cached for future use)"
                     read -p "Enter your choice (1/2): " auth_choice
-                    
+
                     case "$auth_choice" in
                         1)
                             # Check if tea CLI is available
@@ -5031,7 +5323,7 @@ fetch-issues() {
                                 echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
                                 return 1
                             fi
-                            
+
                             # Try to get token from tea using improved method
                             gitea_token=$(get_tea_token "$gitea_server")
                             if [ -n "$gitea_token" ]; then
@@ -5049,7 +5341,7 @@ fetch-issues() {
                             echo -e "${GREEN}Enter your Gitea API token:${NC}"
                             read -s API_TOKEN
                             echo
-                            
+
                             if [ -n "$API_TOKEN" ]; then
                                 auth_header="Authorization: token $API_TOKEN"
                                 # Cache the token
@@ -5065,29 +5357,29 @@ fetch-issues() {
                     esac
                 fi
             fi
-            
+
             echo -e "${PURPLE}Fetching issues from Gitea...${NC}"
-            
+
             # Extract owner and repo from repo_info
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
-            
+
             # Construct API endpoint
             local base_url="https://$gitea_server"
             local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
-            
+
             # Add state filter
             if [[ "$state" != "all" ]]; then
                 api_endpoint="$api_endpoint?state=$state"
             fi
-            
+
             # Fetch issues
             if [ -n "$auth_header" ]; then
                 issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
             else
                 issues_json=$(curl -s "$api_endpoint")
             fi
-            
+
             # Check if we got valid JSON
             if ! echo "$issues_json" | jq . &>/dev/null; then
                 echo -e "${RED}Error: Failed to get valid JSON response from Gitea API${NC}"
@@ -5101,7 +5393,7 @@ fetch-issues() {
                 echo -e "${RED}Error: GitHub CLI (gh) is required but not installed${NC}"
                 return 1
             fi
-            
+
             echo -e "${PURPLE}Fetching issues from GitHub...${NC}"
             if [[ "$format" == "json" ]]; then
                 issues_json=$(gh issue list --state "$state" --json number,title,body,state,author,assignees,labels,createdAt,updatedAt,url --jq '.')
@@ -5110,20 +5402,20 @@ fetch-issues() {
             fi
             ;;
     esac
-    
+
     # Display results
     if [[ "$format" == "json" ]]; then
         echo "$issues_json" | jq '.'
     else
         echo "$issues_json"
     fi
-    
+
     echo -e "\n${GREEN}Issues fetched successfully${NC}"
 }
 fetch-issues-all() {
     local state="open"
     local format="display"
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -5156,39 +5448,39 @@ fetch-issues-all() {
                 ;;
         esac
     done
-    
+
     echo -e "${GREEN}Fetching issues from all repositories...${NC}"
     echo -e ""
-    
+
     local repos=()
     while IFS= read -r -d '' gitdir; do
         repos+=("$(dirname "$gitdir")")
     done < <(find . -name .git -type d -print0)
-    
+
     if [[ ${#repos[@]} -eq 0 ]]; then
         echo -e "${ORANGE}No git repositories found in current directory.${NC}"
         return 0
     fi
-    
+
     local total_repos=${#repos[@]}
     local success_count=0
     local failed_count=0
-    
+
     for repodir in "${repos[@]}"; do
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         echo -e "${BLUE}📁 Repository: $repodir${NC}"
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-        
+
         if ( cd "$repodir" && GITS_ISSUES_NONINTERACTIVE=1 fetch-issues --state "$state" --format "$format" ); then
             ((success_count++))
         else
             ((failed_count++))
             echo -e "${RED}Failed to fetch issues for $repodir${NC}"
         fi
-        
+
         echo -e ""
     done
-    
+
     echo -e "${PURPLE}Summary:${NC}"
     echo -e "  Total repositories: $total_repos"
     echo -e "  ${GREEN}Successful: $success_count${NC}"
@@ -5261,20 +5553,20 @@ save-issues() {
                 ;;
             esac
     done
-    
+
     # Check if we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
         echo -e "${RED}Error: Not in a git repository${NC}"
         return 1
     fi
-    
+
     # Get repository info
     local repo_info=$(get_repo_info)
     if [[ -z "$repo_info" ]]; then
         echo -e "${RED}Error: Could not determine repository information${NC}"
         return 1
     fi
-    
+
     # Normalize repo info (strip optional .git suffix from the repo portion)
     local repo_owner_part=$(echo "$repo_info" | cut -d'/' -f1)
     local repo_name_part=$(echo "$repo_info" | cut -d'/' -f2)
@@ -5285,18 +5577,18 @@ save-issues() {
     local safe_repo_name=$(echo "$repo_info" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
     output_dir="./${safe_repo_name}-issues"
     mkdir -p "$output_dir"
-    
+
     echo -e "${GREEN}Saving $state issues for repository: $repo_info${NC}"
     echo -e "${BLUE}Output directory: $output_dir${NC}"
     echo -e "${BLUE}Format: $format${NC}"
     echo -e ""
-    
+
     # Get platform info
     local platform=$(detect_platform)
-    
+
     # Fetch issues directly based on platform
     local issues_json=""
-    
+
     case "$platform" in
         "forgejo")
             # Extract Forgejo server info
@@ -5305,13 +5597,13 @@ save-issues() {
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
             repo="${repo%.git}"
-            
+
             if [[ "$remote_url" == *"forge.ourworld.tf"* ]]; then
                 forgejo_server="forge.ourworld.tf"
             else
                 forgejo_server=$(echo "$remote_url" | sed -E 's|.*@([^:/]+)[:/].*|\1|' | sed -E 's|https?://([^/]+)/.*|\1|')
             fi
-            
+
             # Check for authentication with token caching
             local auth_header=""
 
@@ -5354,25 +5646,25 @@ save-issues() {
                     fi
                 fi
             fi
-            
+
             echo -e "${PURPLE}Fetching issues from Forgejo...${NC}"
-            
+
             # Construct API endpoint
             local base_url="https://$forgejo_server"
             local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
-            
+
             # Add state filter
             if [[ "$state" != "all" ]]; then
                 api_endpoint="$api_endpoint?state=$state"
             fi
-            
+
             # Fetch issues
             if [ -n "$auth_header" ]; then
                 issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
             else
                 issues_json=$(curl -s "$api_endpoint")
             fi
-            
+
             # Check if we got valid JSON
             if ! echo "$issues_json" | jq . &>/dev/null; then
                 echo -e "${RED}Error: Failed to get valid JSON response from Forgejo API${NC}"
@@ -5387,14 +5679,14 @@ save-issues() {
             local owner=$(echo "$repo_info" | cut -d'/' -f1)
             local repo=$(echo "$repo_info" | cut -d'/' -f2)
             repo="${repo%.git}"
-            
+
             # Check for authentication with token caching
             local auth_header=""
             local gitea_token=""
-            
+
             # Check for cached token first
             local cached_token=$(get_cached_gitea_token "$gitea_server")
-            
+
             if [ -n "$cached_token" ]; then
                 if [[ "$GITS_ISSUES_NONINTERACTIVE" == "1" ]]; then
                     auth_header="Authorization: token $cached_token"
@@ -5403,25 +5695,25 @@ save-issues() {
                     echo -e "${GREEN}Found cached authentication token for $gitea_server${NC}"
                     echo -e "${GREEN}Use cached token? (y/n):${NC}"
                     read -r use_cached
-                    
+
                     if [[ $use_cached =~ ^[Yy]$ ]]; then
                         auth_header="Authorization: token $cached_token"
                         echo -e "${BLUE}Using cached token${NC}"
                     fi
                 fi
             fi
-            
+
             # If no cached token or user declined, prompt for authentication (interactive mode only)
             if [ -z "$auth_header" ] && [[ "$GITS_ISSUES_NONINTERACTIVE" != "1" ]]; then
                 echo -e "${GREEN}Do you want to access private issues? (y/n):${NC}"
                 read -r use_auth
-                
+
                 if [[ $use_auth =~ ^[Yy]$ ]]; then
                     echo -e "${GREEN}Choose authentication method:${NC}"
                     echo -e "1) Use existing Gitea login (via tea CLI)"
                     echo -e "2) Provide an API token (will be cached for future use)"
                     read -p "Enter your choice (1/2): " auth_choice
-                    
+
                     case "$auth_choice" in
                         1)
                             # Check if tea CLI is available
@@ -5429,7 +5721,7 @@ save-issues() {
                                 echo -e "${RED}Error: tea CLI is required but not installed. Please install tea CLI or use option 2.${NC}"
                                 return 1
                             fi
-                            
+
                             # Try to get token from tea using improved method
                             gitea_token=$(get_tea_token "$gitea_server")
                             if [ -n "$gitea_token" ]; then
@@ -5447,7 +5739,7 @@ save-issues() {
                             echo -e "${GREEN}Enter your Gitea API token:${NC}"
                             read -s API_TOKEN
                             echo
-                            
+
                             if [ -n "$API_TOKEN" ]; then
                                 auth_header="Authorization: token $API_TOKEN"
                                 # Cache the token
@@ -5463,15 +5755,15 @@ save-issues() {
                     esac
                 fi
             fi
-            
+
             local base_url="https://$gitea_server"
             local api_endpoint="$base_url/api/v1/repos/$owner/$repo/issues"
-            
+
             # Add state filter
             if [[ "$state" != "all" ]]; then
                 api_endpoint="$api_endpoint?state=$state"
             fi
-            
+
             # Fetch issues with or without authentication
             if [ -n "$auth_header" ]; then
                 issues_json=$(curl -s -H "$auth_header" "$api_endpoint")
@@ -5489,7 +5781,7 @@ save-issues() {
             fi
             ;;
     esac
-    
+
     # Check if we got valid JSON
     if ! echo "$issues_json" | jq . &>/dev/null; then
         echo -e "${RED}Error: Failed to get valid JSON response${NC}"
@@ -5504,10 +5796,10 @@ save-issues() {
         echo "$issues_json" | jq '.'
         return 1
     fi
-    
+
     # Process and save issues
     local saved_count=0
-    
+
     while read -r issue; do
         # Skip any non-object items defensively
         if ! echo "$issue" | jq -e 'type == "object"' >/dev/null 2>&1; then
@@ -5521,7 +5813,7 @@ save-issues() {
         local author=$(echo "$issue" | jq -r '.author.login // .user.login // "Unknown"')
         local created_at=$(echo "$issue" | jq -r '.createdAt // .created_at // ""')
         local url=$(echo "$issue" | jq -r '.url // .html_url // ""')
-        
+
         # If we still don't have a usable identifier, skip this entry
         if [[ -z "$issue_number" || "$issue_number" == "null" ]]; then
             continue
@@ -5557,7 +5849,7 @@ save-issues() {
         # Create safe filename
         local safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-+/-/g' | sed 's/^-//; s/-$//')
         local filename="${issue_number}-${safe_title}.md"
-        
+
         case "$format" in
             markdown)
                 # Create markdown file
@@ -5646,17 +5938,17 @@ EOF
                 fi
                 ;;
         esac
-        
+
         echo -e "${GREEN}Saved: $filename${NC}"
         ((saved_count++))
-        
+
     done < <(echo "$issues_json" | jq -c '.[]')
-    
+
     # Sync functionality: Remove stale files for closed/resolved issues
     echo -e "\n${BLUE}Syncing with repository state...${NC}"
     local removed_count=0
     local current_issues=()
-    
+
     # Collect current issue numbers
     while read -r issue; do
         # Skip non-object entries
@@ -5669,14 +5961,14 @@ EOF
             current_issues+=("$num")
         fi
     done < <(echo "$issues_json" | jq -c '.[]')
-    
+
     # Check for stale files
     for file in "$output_dir"/*; do
         if [[ -f "$file" ]]; then
             local filename=$(basename "$file")
             # Extract issue number from filename
             local issue_num=$(echo "$filename" | sed 's/-.*$//' | sed 's/\.json$//' | sed 's/\.md$//')
-            
+
             # Check if this issue number exists in current issues
             local found=false
             for current_num in "${current_issues[@]}"; do
@@ -5685,7 +5977,7 @@ EOF
                     break
                 fi
             done
-            
+
             # Remove stale file
             if [[ "$found" == false ]]; then
                 echo -e "${ORANGE}Removed stale file: $filename${NC}"
@@ -5694,20 +5986,20 @@ EOF
             fi
         fi
     done
-    
+
     if [[ $removed_count -gt 0 ]]; then
         echo -e "${GREEN}Removed $removed_count stale files${NC}"
     else
         echo -e "${GREEN}All issue files are up to date${NC}"
     fi
-        
-    
+
+
     echo -e "\n${GREEN}Successfully saved $saved_count issues to $output_dir${NC}"
 }
 save-issues-all() {
     local state="open"
     local format="markdown"
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -5740,39 +6032,39 @@ save-issues-all() {
                 ;;
         esac
     done
-    
+
     echo -e "${GREEN}Saving issues for all repositories...${NC}"
     echo -e ""
-    
+
     local repos=()
     while IFS= read -r -d '' gitdir; do
         repos+=("$(dirname "$gitdir")")
     done < <(find . -name .git -type d -print0)
-    
+
     if [[ ${#repos[@]} -eq 0 ]]; then
         echo -e "${ORANGE}No git repositories found in current directory.${NC}"
         return 0
     fi
-    
+
     local total_repos=${#repos[@]}
     local success_count=0
     local failed_count=0
-    
+
     for repodir in "${repos[@]}"; do
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
         echo -e "${BLUE}📁 Repository: $repodir${NC}"
         echo -e "${PURPLE}═══════════════════════════════════════════${NC}"
-        
+
         if ( cd "$repodir" && GITS_ISSUES_NONINTERACTIVE=1 save-issues --state "$state" --format "$format" ); then
             ((success_count++))
         else
             ((failed_count++))
             echo -e "${RED}Failed to save issues for $repodir${NC}"
         fi
-        
+
         echo -e ""
     done
-    
+
     echo -e "${PURPLE}Summary:${NC}"
     echo -e "  Total repositories: $total_repos"
     echo -e "  ${GREEN}Successful: $success_count${NC}"
@@ -5785,19 +6077,19 @@ help() {
     echo -e "\n${ORANGE}═══════════════════════════════════════════${NC}"
     echo -e "${ORANGE}              GitS - Git Speed              ${NC}"
     echo -e "${ORANGE}═══════════════════════════════════════════${NC}\n"
-    
+
     echo -e "${PURPLE}Description:${NC} GitS is a Bash CLI tool that enhances Git with additional features while maintaining full Git compatibility."
     echo -e "${PURPLE}Key Feature:${NC} GitS automatically passes through any native Git commands that aren't specifically handled by GitS."
     echo -e "${PURPLE}Example:${NC}     'gits status' will execute 'git status' since it's not a GitS command"
     echo -e "${PURPLE}Usage:${NC}       gits <command> [arguments]"
     echo -e "${PURPLE}License:${NC}     Apache 2.0"
     echo -e "${PURPLE}Code:${NC}        https://github.com/Mik-TF/gits.git\n"
-    
+
     echo -e "${PURPLE}Command Handling:${NC}"
     echo -e "  1. First tries to execute GitS-specific commands (listed below)"
     echo -e "  2. If not found, automatically passes the command to Git"
     echo -e "  3. If neither GitS nor Git recognizes the command, shows an error\n"
-    
+
     echo -e "${PURPLE}GitS-specific commands:${NC}"
     echo -e "  ${GREEN}push [branch] [commit-message] [-p] [-py]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} add all changes, commit with message, push"
@@ -5810,76 +6102,93 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits push main \"Initial commit\""
     echo -e "                  ${BLUE}Example:${NC} gits push -p"
     echo -e "                  ${BLUE}Example:${NC} gits push -py\n"
-    
+
     echo -e "  ${GREEN}up${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Quick workflow: git add . && pal /commit -y && git push"
     echo -e "                  ${BLUE}Note:${NC}    Automatically stages all changes, commits with AI-generated message, and pushes"
     echo -e "                  ${BLUE}Note:${NC}    Requires pal command to be installed"
     echo -e "                  ${BLUE}Example:${NC} gits up\n"
-    
+
     echo -e "  ${GREEN}pull [branch]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Checkout branch, stash changes, fetch, pull, show status"
     echo -e "                  ${BLUE}Note:${NC}    Default branch is 'main' if not specified"
     echo -e "                  ${BLUE}Example:${NC} gits pull"
     echo -e "                  ${BLUE}Example:${NC} gits pull main\n"
-    
+
     echo -e "  ${GREEN}pr <action> [OPTIONS]${NC}"
-    echo -e "                  ${BLUE}Actions:${NC} create, close, merge"
+    echo -e "                  ${BLUE}Actions:${NC} create, close, merge, create-all, merge-all"
     echo -e "                  ${BLUE}Interactive:${NC} gits pr create"
     echo -e "                  ${BLUE}Parameterized:${NC} gits pr create --title 'Title' --base main --head feature"
     echo -e "                  ${BLUE}One-liner:${NC} gits pr create --title 'Update' --base main --body 'Changes' && gits pr merge --pr-number \$(gits pr-latest)"
     echo -e "                  ${BLUE}Example:${NC} gits pr close"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 --delete-branch --branch-name feature"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number 123 -d --branch-name feature\n"
-    
+
+    echo -e "  ${GREEN}pr create-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Create PRs across all repositories with differences"
+    echo -e "                  ${BLUE}Options:${NC} --title (required), --base (required), --suffix, --head, --body, --dry-run"
+    echo -e "                  ${BLUE}Note:${NC}    Only creates PRs for repos with actual differences (like diff-all)"
+    echo -e "                  ${BLUE}Suffix mode:${NC} --suffix -qr creates PRs from {default}-qr → base"
+    echo -e "                  ${BLUE}Example:${NC} gits pr create-all --title 'Feature X' --base main --suffix -qr"
+    echo -e "                  ${BLUE}Example:${NC} gits pr create-all --title 'Update' --base main --dry-run"
+    echo -e "                  ${BLUE}Example:${NC} gits pr create-all --title 'Fix' --base main --head feature-branch\n"
+
+    echo -e "  ${GREEN}pr merge-all [OPTIONS]${NC}"
+    echo -e "                  ${BLUE}Actions:${NC} Merge latest open PRs across all repositories"
+    echo -e "                  ${BLUE}Options:${NC} --delete-branch/-d, --dry-run"
+    echo -e "                  ${BLUE}Note:${NC}    Finds and merges the latest open PR in each repository"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge-all"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge-all --delete-branch"
+    echo -e "                  ${BLUE}Example:${NC} gits pr merge-all --dry-run\n"
+
     echo -e "  ${GREEN}pr-latest${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Get the latest PR number regardless of platform"
     echo -e "                  ${BLUE}Example:${NC} gits pr-latest"
     echo -e "                  ${BLUE}Example:${NC} gits pr merge --pr-number $(gits pr-latest)\n"
-    
+
     echo -e "  ${GREEN}commit${NC}"
     echo -e "                  ${BLUE}Actions:${NC} prompt for commit message, commit"
     echo -e "                  ${BLUE}Example:${NC} gits commit\n"
-    
+
     echo -e "  ${GREEN}repo <action>${NC}"
     echo -e "                  ${BLUE}Actions:${NC} create, delete"
     echo -e "                  ${BLUE}Example:${NC} gits repo create"
     echo -e "                  ${BLUE}Example:${NC} gits repo delete\n"
-    
+
     echo -e "  ${GREEN}init${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Choose platform, init repo, create branch, add files"
     echo -e "                  ${BLUE}Note:${NC}    Default branch: 'main' for all platforms"
     echo -e "                  ${BLUE}Note:${NC}    Forgejo default server: forge.ourworld.tf (customizable)"
     echo -e "                  ${BLUE}Note:${NC}    Gitea default server: git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits init\n"
-    
+
     echo -e "  ${GREEN}new [name]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} create new branch, switch to it"
     echo -e "                  ${BLUE}Note:${NC}    If no name provided, you'll be prompted"
     echo -e "                  ${BLUE}Example:${NC} gits new"
     echo -e "                  ${BLUE}Example:${NC} gits new feature-branch\n"
-    
+
     echo -e "  ${GREEN}delete [branch-name]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Switch to default, delete branch locally/remotely"
     echo -e "                  ${BLUE}Note:${NC}    If no name provided, you'll be prompted"
     echo -e "                  ${BLUE}Example:${NC} gits delete"
     echo -e "                  ${BLUE}Example:${NC} gits delete feature-branch\n"
-    
+
     echo -e "  ${GREEN}revert <number>${NC}"
     echo -e "                  ${BLUE}Actions:${NC} revert changes to X commits ago, stage changes"
     echo -e "                  ${BLUE}Note:${NC}    Changes are staged but not committed"
     echo -e "                  ${BLUE}Example:${NC} gits revert 1"
     echo -e "                  ${BLUE}Example:${NC} gits revert 3\n"
-    
+
     echo -e "  ${GREEN}unrevert${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Undo the last revert if not committed"
     echo -e "                  ${BLUE}Example:${NC} gits unrevert\n"
-    
+
     echo -e "  ${GREEN}clone <repo>${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone repository, switch to repo directory"
     echo -e "                  ${BLUE}Example:${NC} gits clone https://github.com/org/repo"
     echo -e "                  ${BLUE}Example:${NC} gits clone org/repo\n"
-    
+
     echo -e "  ${GREEN}clone-all [URL|username] [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user (interactive or with argument)"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
@@ -5892,13 +6201,13 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits clone-all myusername --yes"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all github.com/myusername --cached --private"
     echo -e "                  ${BLUE}Example:${NC} gits clone-all forge.ourworld.tf/myorg --yes\n"
-    
+
     echo -e "  ${GREEN}clone-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Clone all repositories from a user on selected platform"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username and clones all repos into it"
     echo -e "                  ${BLUE}Note:${NC}    Supports various URL formats including github.com and git.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits clone-list\n"
-    
+
     echo -e "  ${GREEN}fetch-issues [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Fetch issues from current repository and display in console"
     echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json), --yes/-y, --cached, --private"
@@ -5908,13 +6217,13 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --state all --format json"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues --yes\n"
-    
+
     echo -e "  ${GREEN}fetch-issues-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Fetch issues from all repositories in directory tree"
     echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (display/json)"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-issues-all --state all --format json\n"
-    
+
     echo -e "  ${GREEN}save-issues [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Save issues to files in organized directory structure"
     echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain), --yes/-y, --cached, --private"
@@ -5925,26 +6234,26 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits save-issues"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues --state all --format markdown"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues --yes\n"
-    
+
     echo -e "  ${GREEN}save-issues-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Save issues for all repositories to per-repository directories"
     echo -e "                  ${BLUE}Options:${NC} --state (open/closed/all), --format (markdown/json/plain)"
     echo -e "                  ${BLUE}Output:${NC} ./owner-repo-issues/ directories inside each repository"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues-all"
     echo -e "                  ${BLUE}Example:${NC} gits save-issues-all --state all --format json\n"
-    
+
     echo -e "  ${GREEN}list-all${NC}"
     echo -e "                  ${BLUE}Actions:${NC} List repositories with current branch and simple status flags"
     echo -e "                  ${BLUE}Note:${NC}    Shows [modified], [+N ahead], or [clean] per repository"
     echo -e "                  ${BLUE}Example:${NC} gits list-all\n"
-    
+
     echo -e "  ${GREEN}status-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Check git status across all repositories in directory tree"
     echo -e "                  ${BLUE}Options:${NC} --all (show clean repos), --compact (summary format)"
     echo -e "                  ${BLUE}Note:${NC}    By default only shows repositories needing attention"
     echo -e "                  ${BLUE}Example:${NC} gits status-all"
     echo -e "                  ${BLUE}Example:${NC} gits status-all --all --compact\n"
-    
+
     echo -e "  ${GREEN}fetch-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Fetch updates from all repositories in directory tree"
     echo -e "                  ${BLUE}Options:${NC} --no-parallel (disable parallel), --max-concurrent N (default: 5)"
@@ -5952,7 +6261,7 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits fetch-all"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-all --no-parallel"
     echo -e "                  ${BLUE}Example:${NC} gits fetch-all --max-concurrent 10\n"
-    
+
     echo -e "  ${GREEN}pull-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Pull updates from all repositories with conflict detection"
     echo -e "                  ${BLUE}Options:${NC} --strategy (merge/rebase/ff-only), --auto-merge (attempt auto-resolve)"
@@ -5960,7 +6269,7 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits pull-all"
     echo -e "                  ${BLUE}Example:${NC} gits pull-all --strategy rebase"
     echo -e "                  ${BLUE}Example:${NC} gits pull-all --auto-merge --verbose\n"
-    
+
     echo -e "  ${GREEN}push-all [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Interactively add, commit, and push changes across all dirty repositories"
     echo -e "                  ${BLUE}Options:${NC} --batch (same message), --dry-run (preview), --yes (skip prompts)"
@@ -5990,12 +6299,12 @@ help() {
     echo -e "                  ${BLUE}Actions:${NC} Interactive login to selected platform"
     echo -e "                  ${BLUE}Platforms:${NC} Forgejo (forge.ourworld.tf), Gitea (git.ourworld.tf), GitHub"
     echo -e "                  ${BLUE}Example:${NC} gits login\n"
-    
+
     echo -e "  ${GREEN}logout${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Logout from selected platform"
     echo -e "                  ${BLUE}Platforms:${NC} Forgejo, Gitea, GitHub"
     echo -e "                  ${BLUE}Example:${NC} gits logout\n"
-    
+
     echo -e "  ${GREEN}token <command> [server]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Manage cached API tokens"
     echo -e "                  ${BLUE}Commands:${NC} list, show, clear"
@@ -6003,21 +6312,21 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits token list"
     echo -e "                  ${BLUE}Example:${NC} gits token show forge.ourworld.tf"
     echo -e "                  ${BLUE}Example:${NC} gits token clear forge.ourworld.tf\n"
-    
+
     echo -e "  ${GREEN}install${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Install GitS globally"
     echo -e "                  ${BLUE}Example:${NC} gits install\n"
-    
+
     echo -e "  ${GREEN}uninstall${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Remove GitS from system"
     echo -e "                  ${BLUE}Example:${NC} gits uninstall\n"
-    
+
     echo -e "  ${GREEN}help${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Show this help message"
     echo -e "                  ${BLUE}Example:${NC} gits help\n"
-    
+
     echo -e "${ORANGE}═══════════════════════════════════════════${NC}"
-    
+
     echo -e "${PURPLE}QUICK REFERENCE - PR WORKFLOWS:${NC}"
     echo -e "${BLUE}Interactive:${NC} gits pr create"
     echo -e "${BLUE}Parameterized:${NC} gits pr create --title 'My PR' --base main"
@@ -6028,10 +6337,10 @@ help() {
     echo -e "  ${BLUE}Example:${NC} gits log          → runs git log"
     echo -e "  ${BLUE}Example:${NC} gits diff         → runs git diff\n"
     echo -e "  ${BLUE}Note:${NC} Any Git command not listed above will be passed directly to Git\n"
-    
+
     echo -e "${PURPLE}Note:${NC} Ensure you're in your git repository directory when running git-related commands."
     echo -e "${PURPLE}Tip:${NC}  Use 'git help' to see all available Git commands that can be used with GitS.\n"
-    
+
     echo -e "  ${GREEN}init-list${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Initialize multiple repositories at once"
     echo -e "                  ${BLUE}Note:${NC}    Creates a directory with username-repos and initializes all repos into it"
