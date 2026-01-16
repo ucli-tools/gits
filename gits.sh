@@ -1126,6 +1126,8 @@ diff-all() {
     local detailed=false
     local quiet=false
     local no_color=false
+    local remote_mode=false
+    local do_fetch=true
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -1146,25 +1148,41 @@ diff-all() {
                 no_color=true
                 shift
                 ;;
+            --remote|-r)
+                remote_mode=true
+                shift
+                ;;
+            --no-fetch)
+                do_fetch=false
+                shift
+                ;;
             --help|-h)
-                echo -e "${GREEN}Usage: gits diff-all <from-branch> [to-branch] [OPTIONS]${NC}"
+                echo -e "${GREEN}Usage: gits diff-all [branch] [OPTIONS]${NC}"
                 echo -e "${BLUE}Compare branches across all repositories in current directory tree${NC}"
                 echo -e ""
                 echo -e "${PURPLE}Arguments:${NC}"
-                echo -e "  from-branch    Source branch for comparison (optional with --suffix)"
-                echo -e "  to-branch      Target branch for comparison (optional with --suffix)"
+                echo -e "  from-branch    Source branch for comparison (optional with --suffix or --remote)"
+                echo -e "  to-branch      Target branch for comparison (optional with --suffix or --remote)"
                 echo -e ""
                 echo -e "${PURPLE}Options:${NC}"
+                echo -e "  --remote, -r     Compare local branch vs its remote tracking branch (origin/branch)"
+                echo -e "                   If no branch specified, uses current branch in each repo"
+                echo -e "  --no-fetch       Skip fetching from remote (use with --remote)"
                 echo -e "  --suffix SUFFIX  Compare each repo's default branch with default-branch+SUFFIX"
                 echo -e "                   Or compare specified from-branch with from-branch+SUFFIX"
-                echo -e "  -d, --detailed    Show full diff output (not just summary)"
-                echo -e "  -q, --quiet       Only show repositories with differences"
-                echo -e "  --no-color        Disable colored output"
-                echo -e "  -h, --help        Show this help message"
+                echo -e "  -d, --detailed   Show full diff output (not just summary)"
+                echo -e "  -q, --quiet      Only show repositories with differences"
+                echo -e "  --no-color       Disable colored output"
+                echo -e "  -h, --help       Show this help message"
                 echo -e ""
                 echo -e "${BLUE}Examples:${NC}"
-                echo -e "  # Auto-detect default branch per repository (most common usage)"
-                echo -e "  gits diff-all --suffix -update     # Compare main vs main-update (etc.)"
+                echo -e "  # Compare local vs remote (most common for checking sync status)"
+                echo -e "  gits diff-all --remote              # Current branch vs origin/current-branch"
+                echo -e "  gits diff-all main --remote         # main vs origin/main"
+                echo -e "  gits diff-all --remote --no-fetch   # Skip fetch, use cached remote refs"
+                echo -e "  "
+                echo -e "  # Auto-detect default branch per repository"
+                echo -e "  gits diff-all --suffix -update      # Compare main vs main-update (etc.)"
                 echo -e "  "
                 echo -e "  # Explicit from-branch with suffix"
                 echo -e "  gits diff-all main --suffix -update           # Compare main vs main-update"
@@ -1196,8 +1214,8 @@ diff-all() {
     done
 
     # Validate required arguments and set defaults
-    if [[ -z "$from_branch" ]] && [[ -z "$suffix" ]]; then
-        echo -e "${RED}Error: Either from-branch or --suffix option is required${NC}"
+    if [[ -z "$from_branch" ]] && [[ -z "$suffix" ]] && [[ "$remote_mode" == false ]]; then
+        echo -e "${RED}Error: Either from-branch, --suffix, or --remote option is required${NC}"
         echo -e "Use 'gits diff-all --help' for usage information."
         return 1
     fi
@@ -1207,7 +1225,19 @@ diff-all() {
         echo -e "${BLUE}Using each repository's default branch as base for suffix comparison${NC}"
     fi
 
-    echo -e "${GREEN}Comparing branches '$from_branch' and '$to_branch' across all repositories...${NC}"
+    # Remote mode messaging
+    if [[ "$remote_mode" == true ]]; then
+        if [[ -n "$from_branch" ]]; then
+            echo -e "${GREEN}Comparing '$from_branch' vs 'origin/$from_branch' across all repositories...${NC}"
+        else
+            echo -e "${GREEN}Comparing local branches vs their remote tracking branches...${NC}"
+        fi
+        if [[ "$do_fetch" == true ]]; then
+            echo -e "${BLUE}Fetching from remotes first...${NC}"
+        fi
+    else
+        echo -e "${GREEN}Comparing branches '$from_branch' and '$to_branch' across all repositories...${NC}"
+    fi
     echo -e ""
 
     local found_repos=0
@@ -1221,6 +1251,91 @@ diff-all() {
         cd "$repodir" || continue
 
         found_repos=$((found_repos + 1))
+
+        # Handle remote mode
+        if [[ "$remote_mode" == true ]]; then
+            # Fetch from remote if requested
+            if [[ "$do_fetch" == true ]]; then
+                git fetch origin --quiet 2>/dev/null
+            fi
+
+            # Determine which branch to compare
+            local local_branch="$from_branch"
+            if [[ -z "$local_branch" ]]; then
+                local_branch=$(git branch --show-current 2>/dev/null)
+            fi
+
+            if [[ -z "$local_branch" ]]; then
+                if [[ "$quiet" == false ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC}"
+                    echo -e "  ${RED}❌ Could not determine current branch${NC}"
+                    echo -e ""
+                fi
+                repos_missing_branches=$((repos_missing_branches + 1))
+                cd - >/dev/null 2>&1
+                continue
+            fi
+
+            # Check if local branch exists
+            if ! git show-ref --verify --quiet "refs/heads/$local_branch" 2>/dev/null; then
+                if [[ "$quiet" == false ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC}"
+                    echo -e "  ${RED}❌ Local branch '$local_branch' not found${NC}"
+                    echo -e ""
+                fi
+                repos_missing_branches=$((repos_missing_branches + 1))
+                cd - >/dev/null 2>&1
+                continue
+            fi
+
+            # Check if remote branch exists
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$local_branch" 2>/dev/null; then
+                if [[ "$quiet" == false ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC}"
+                    echo -e "  ${RED}❌ Remote branch 'origin/$local_branch' not found${NC}"
+                    echo -e ""
+                fi
+                repos_missing_branches=$((repos_missing_branches + 1))
+                cd - >/dev/null 2>&1
+                continue
+            fi
+
+            # Get ahead/behind counts
+            local ahead=$(git rev-list --count "origin/$local_branch..$local_branch" 2>/dev/null || echo "0")
+            local behind=$(git rev-list --count "$local_branch..origin/$local_branch" 2>/dev/null || echo "0")
+
+            if [[ "$ahead" -gt 0 ]] || [[ "$behind" -gt 0 ]]; then
+                repos_with_diffs=$((repos_with_diffs + 1))
+
+                echo -e "${BLUE}📁 $repodir${NC} (${PURPLE}$local_branch${NC})"
+                if [[ "$ahead" -gt 0 ]] && [[ "$behind" -gt 0 ]]; then
+                    echo -e "  ${ORANGE}↑ $ahead ahead, ↓ $behind behind${NC}"
+                elif [[ "$ahead" -gt 0 ]]; then
+                    echo -e "  ${GREEN}↑ $ahead commits ahead of origin${NC}"
+                else
+                    echo -e "  ${ORANGE}↓ $behind commits behind origin${NC}"
+                fi
+
+                # Show diff stat if detailed
+                if [[ "$detailed" == true ]]; then
+                    local diff_stat=$(git diff --stat "$local_branch..origin/$local_branch" 2>/dev/null)
+                    if [[ -n "$diff_stat" ]]; then
+                        echo -e "  ${PURPLE}$(echo "$diff_stat" | tail -1)${NC}"
+                    fi
+                fi
+                echo -e ""
+            else
+                repos_without_diffs=$((repos_without_diffs + 1))
+                if [[ "$quiet" == false ]]; then
+                    echo -e "${BLUE}📁 $repodir${NC} (${PURPLE}$local_branch${NC})"
+                    echo -e "  ${GREEN}✅ In sync with origin${NC}"
+                    echo -e ""
+                fi
+            fi
+
+            cd - >/dev/null 2>&1
+            continue
+        fi
 
         # Resolve branch references (prefer local branches, fall back to remote)
         local resolved_from_branch=""
