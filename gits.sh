@@ -6402,12 +6402,14 @@ help() {
     echo -e "                  ${BLUE}Example:${NC} gits push-all"
     echo -e "                  ${BLUE}Example:${NC} gits push-all --batch -m \"Update documentation\"\n"
 
-    echo -e "  ${GREEN}diff-all <from-branch> [to-branch] [OPTIONS]${NC}"
+    echo -e "  ${GREEN}diff-all [branch] [OPTIONS]${NC}"
     echo -e "                  ${BLUE}Actions:${NC} Compare branches across all repositories in current directory tree"
-    echo -e "                  ${BLUE}Options:${NC} --suffix SUFFIX (auto-detect repo default branches), --detailed, --quiet"
+    echo -e "                  ${BLUE}Options:${NC} --remote/-r (compare vs origin), --no-fetch, --suffix, --detailed, --quiet"
     echo -e "                  ${BLUE}Note:${NC}    Shows summary of differences between branches for all repositories"
-    echo -e "                  ${BLUE}Example:${NC} gits diff-all --suffix -work-enhancements  # Auto-detect default branches"
-    echo -e "                  ${BLUE}Example:${NC} gits diff-all main --suffix -update       # Explicit from-branch"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all --remote                    # Current branch vs origin"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all main --remote               # main vs origin/main"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all --remote --no-fetch         # Skip fetching from remote"
+    echo -e "                  ${BLUE}Example:${NC} gits diff-all --suffix -v1-work           # main vs main-v1-work"
     echo -e "                  ${BLUE}Example:${NC} gits diff-all main feature-branch         # Traditional comparison\n"
 
     echo -e "  ${GREEN}set-all <branch-name>${NC}"
