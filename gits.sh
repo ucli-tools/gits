@@ -3879,20 +3879,30 @@ pr_create_all() {
         local pr_args=(--title "$title" --base "$base" --head "$head_branch")
         [ -n "$body" ] && pr_args+=(--body "$body")
 
-        # Call pr_create
-        if pr_create "$platform_choice" "${pr_args[@]}" 2>&1 | grep -q -E "(Successfully created|Created pull request|created)"; then
+        # Call pr_create once and capture the result
+        local result=$(pr_create "$platform_choice" "${pr_args[@]}" 2>&1)
+        local exit_code=$?
+
+        # Check result for success/failure patterns
+        if echo "$result" | grep -q -E "(Successfully created|Created pull request)"; then
             echo -e "   ✅ PR created successfully"
             ((created++))
+        elif echo "$result" | grep -qi -E "(already exists|already open|pull request already)"; then
+            echo -e "   ⚠️  PR already exists, skipping"
+            ((skipped++))
+        elif echo "$result" | grep -q -E "(Failed to create|Error:|error:|No cached token)"; then
+            echo -e "   ❌ Failed to create PR"
+            echo -e "   ${RED}$result${NC}" | head -3
+            ((failed++))
+        elif [ $exit_code -ne 0 ]; then
+            echo -e "   ❌ Failed to create PR (exit code: $exit_code)"
+            echo -e "   ${RED}$result${NC}" | head -3
+            ((failed++))
         else
-            # Try to capture the actual result
-            local result=$(pr_create "$platform_choice" "${pr_args[@]}" 2>&1)
-            if echo "$result" | grep -q -E "(already exists|already open)"; then
-                echo -e "   ⚠️  PR already exists, skipping"
-                ((skipped++))
-            else
-                echo -e "   ✅ PR created"
-                ((created++))
-            fi
+            # Unknown result - show output for debugging
+            echo -e "   ⚠️  Unknown result:"
+            echo -e "   $result" | head -3
+            ((failed++))
         fi
         echo ""
 
